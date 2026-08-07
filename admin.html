@@ -1,0 +1,565 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Panel de Kathia — Progreso de Alumnas</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap-wide">
+    <span class="wordmark">Kathia Coach<span>Panel de Progreso</span></span>
+    <div style="display:flex; gap:10px; align-items:center;">
+      <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Mi calendario</a>
+      <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
+    </div>
+  </div>
+</nav>
+
+<main class="portal">
+  <div class="wrap-wide" id="content">
+    <div class="loading">Cargando...</div>
+  </div>
+</main>
+
+<script>
+  const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const contentEl = document.getElementById('content');
+  let alumnasCache = [];
+  let currentProgreso = [];
+  let editingId = null;
+  let animoSeleccionado = null;
+  let vistaGrid = false;
+  let citasCache = { loading: true, configurado: null, error: false, mensaje: '', citas: [] };
+  const ICONOS_ANIMO = ['💪', '🔥', '👏', '🌟', '❤️', '🎉'];
+
+  async function cargarCitas() {
+    try {
+      const resp = await fetch('/.netlify/functions/proximas-citas');
+      const data = await resp.json();
+      citasCache = { loading: false, configurado: !!data.configurado, error: !!data.error, mensaje: data.mensaje || '', citas: data.citas || [] };
+    } catch (err) {
+      citasCache = { loading: false, configurado: true, error: true, mensaje: 'No se pudo conectar con el calendario.', citas: [] };
+    }
+    if (vistaGrid) renderGrid();
+  }
+
+  function fmtHoraCita(iso) {
+    const d = new Date(iso);
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const dia = new Date(d); dia.setHours(0, 0, 0, 0);
+    const dias = Math.round((dia - hoy) / (1000 * 60 * 60 * 24));
+    const hora = d.toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+    if (dias === 0) return `Hoy, ${hora}`;
+    if (dias === 1) return `Mañana, ${hora}`;
+    return `${d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' })}, ${hora}`;
+  }
+
+  function fmtFecha(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+  function diasDesde(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
+  }
+
+  async function init() {
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    const { data: miPerfil } = await supa.from('alumnas').select('es_admin').eq('id', session.user.id).single();
+    if (!miPerfil || !miPerfil.es_admin) {
+      window.location.href = 'portal.html';
+      return;
+    }
+
+    const { data: alumnas, error } = await supa
+      .from('alumnas')
+      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm')
+      .order('nombre', { ascending: true });
+
+    if (error) {
+      contentEl.innerHTML = `<div class="empty-state">No se pudo cargar la lista de alumnas.</div>`;
+      return;
+    }
+
+    const { data: progresoTodo } = await supa
+      .from('progreso')
+      .select('alumna_id, fecha, peso_kg, cintura_cm, cadera_cm')
+      .order('fecha', { ascending: false });
+
+    // Resumen por alumna: cantidad de registros, último registro, últimas medidas y últimos 2 pesos (para el semáforo)
+    const resumen = {};
+    (progresoTodo || []).forEach(p => {
+      if (!resumen[p.alumna_id]) {
+        resumen[p.alumna_id] = { total: 0, ultima: null, ultimoPeso: null, ultimaCintura: null, ultimaCadera: null, pesos: [] };
+      }
+      const r = resumen[p.alumna_id];
+      r.total++;
+      if (!r.ultima) r.ultima = p.fecha;
+      if (r.ultimoPeso == null && p.peso_kg != null) r.ultimoPeso = p.peso_kg;
+      if (r.ultimaCintura == null && p.cintura_cm != null) r.ultimaCintura = p.cintura_cm;
+      if (r.ultimaCadera == null && p.cadera_cm != null) r.ultimaCadera = p.cadera_cm;
+      if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
+    });
+
+    alumnasCache = alumnas.map(a => ({
+      ...a,
+      total: resumen[a.id] ? resumen[a.id].total : 0,
+      ultima: resumen[a.id] ? resumen[a.id].ultima : null,
+      ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
+      ultimaCintura: resumen[a.id] ? resumen[a.id].ultimaCintura : null,
+      ultimaCadera: resumen[a.id] ? resumen[a.id].ultimaCadera : null,
+      pesos: resumen[a.id] ? resumen[a.id].pesos : [],
+    }));
+
+    renderGrid();
+    cargarCitas();
+  }
+
+  function badgeFor(a) {
+    if (!a.ultima) return { cls: 'nueva', icon: '✨', texto: 'Nueva, sin registros' };
+    const dias = diasDesde(a.ultima);
+    if (dias <= 14) return { cls: 'al-dia', icon: '✓', texto: 'Al día' };
+    return { cls: 'pendiente', icon: '⏱', texto: `Sin registrar hace ${dias} días` };
+  }
+
+  function semaforoFor(a) {
+    if (a.peso_objetivo == null || a.pesos.length < 2) {
+      return { cls: 'sf-gris', icon: '⚪', texto: 'Sin datos suficientes' };
+    }
+    const [ultimo, previo] = a.pesos; // [0]=más reciente, [1]=anterior
+    const distPrevia = Math.abs(previo - a.peso_objetivo);
+    const distActual = Math.abs(ultimo - a.peso_objetivo);
+    const avance = distPrevia - distActual;
+    if (avance > 0.3) return { cls: 'sf-verde', icon: '🟢', texto: 'En progreso' };
+    if (avance < -0.3) return { cls: 'sf-rojo', icon: '🔴', texto: 'Retrocedió' };
+    return { cls: 'sf-amarillo', icon: '🟡', texto: 'Estancada' };
+  }
+
+  function calcularEdad(fechaNac) {
+    const hoy = new Date();
+    const nac = new Date(fechaNac + 'T00:00:00');
+    let edad = hoy.getFullYear() - nac.getFullYear();
+    const m = hoy.getMonth() - nac.getMonth();
+    if (m < 0 || (m === 0 && hoy.getDate() < nac.getDate())) edad--;
+    return edad;
+  }
+
+  function diasParaCumple(fechaNac) {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const nac = new Date(fechaNac + 'T00:00:00');
+    let prox = new Date(hoy.getFullYear(), nac.getMonth(), nac.getDate());
+    if (prox < hoy) prox = new Date(hoy.getFullYear() + 1, nac.getMonth(), nac.getDate());
+    return Math.round((prox - hoy) / (1000 * 60 * 60 * 24));
+  }
+
+  function fmtDiaMes(fechaNac) {
+    const nac = new Date(fechaNac + 'T00:00:00');
+    return nac.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+  }
+
+  // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de referencia OMS —
+  // informativo, no reemplaza una evaluación clínica.
+  function imcFor(pesoKg, estaturaCm) {
+    if (pesoKg == null || !estaturaCm) return null;
+    const m = estaturaCm / 100;
+    const imc = pesoKg / (m * m);
+    let categoria;
+    if (imc < 18.5) categoria = 'Bajo peso';
+    else if (imc < 25) categoria = 'Normal';
+    else if (imc < 30) categoria = 'Sobrepeso';
+    else categoria = 'Obesidad';
+    return { valor: imc.toFixed(1), categoria };
+  }
+
+  // ICC (índice cintura-cadera): se calcula solo con datos que ya se registran (sin pedirle nada nuevo a Kathia).
+  function iccFor(cinturaCm, caderaCm) {
+    if (cinturaCm == null || caderaCm == null) return null;
+    return (cinturaCm / caderaCm).toFixed(2);
+  }
+
+  function renderGrid() {
+    vistaGrid = true;
+    const cards = alumnasCache.map((a, i) => {
+      const b = badgeFor(a);
+      const s = semaforoFor(a);
+
+      const medidas = [];
+      if (a.ultimoPeso != null) medidas.push(`⚖️ ${a.ultimoPeso}kg`);
+      if (a.ultimaCintura != null) medidas.push(`Cint. ${a.ultimaCintura}cm`);
+      if (a.ultimaCadera != null) medidas.push(`Cad. ${a.ultimaCadera}cm`);
+
+      const imc = imcFor(a.ultimoPeso, a.estatura_cm);
+      const icc = iccFor(a.ultimaCintura, a.ultimaCadera);
+      const indices = [];
+      if (imc) indices.push(`IMC ${imc.valor} (${imc.categoria})`);
+      if (icc) indices.push(`ICC ${icc}`);
+
+      let edadHTML = '';
+      if (a.fecha_nacimiento) {
+        const edad = calcularEdad(a.fecha_nacimiento);
+        const dias = diasParaCumple(a.fecha_nacimiento);
+        const aviso = dias === 0 ? ' · 🎂 ¡Hoy!' : dias <= 14 ? ` · 🎂 en ${dias} días` : '';
+        edadHTML = `<div class="card-meta">${edad} años · cumple ${fmtDiaMes(a.fecha_nacimiento)}${aviso}</div>`;
+      }
+
+      return `
+        <div class="alumna-card" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
+          <div class="nombre">${a.nombre || a.email}</div>
+          <div class="email">${a.email || ''}</div>
+          <div class="badge-row">
+            <span class="badge ${b.cls}">${b.icon} ${b.texto}</span>
+            <span class="badge ${s.cls}">${s.icon} ${s.texto}</span>
+          </div>
+          ${medidas.length ? `<div class="card-meta card-medidas">${medidas.join(' · ')}</div>` : ''}
+          ${indices.length ? `<div class="card-meta card-medidas">${indices.join(' · ')}</div>` : ''}
+          ${edadHTML}
+          <div class="card-meta">${a.total} registro${a.total === 1 ? '' : 's'} ${a.ultima ? '· último: ' + fmtFecha(a.ultima) : ''}</div>
+        </div>
+      `;
+    }).join('');
+
+    const proximosCumples = alumnasCache
+      .filter(a => a.fecha_nacimiento)
+      .map(a => ({ a, dias: diasParaCumple(a.fecha_nacimiento) }))
+      .filter(x => x.dias <= 30)
+      .sort((x, y) => x.dias - y.dias);
+
+    const cumplePanelHTML = proximosCumples.length ? `
+      <div class="cumple-panel">
+        <div class="cumple-titulo">🎂 Próximos cumpleaños</div>
+        ${proximosCumples.map(({ a, dias }) => `
+          <div class="cumple-item">
+            <span>${a.nombre || a.email}</span>
+            <span>${dias === 0 ? 'Hoy' : dias === 1 ? 'Mañana' : `en ${dias} días`} · ${fmtDiaMes(a.fecha_nacimiento)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    const citasPanelHTML = citasCache.loading
+      ? `<div class="citas-panel"><div class="citas-titulo">📅 Próximas citas</div><div class="citas-vacio">Cargando...</div></div>`
+      : citasCache.configurado === false
+        ? ''
+        : citasCache.error
+          ? `<div class="citas-panel"><div class="citas-titulo">📅 Próximas citas</div><div class="citas-vacio">No se pudieron cargar: ${citasCache.mensaje || 'error desconocido'}.</div></div>`
+          : citasCache.citas.length
+            ? `<div class="citas-panel">
+                <div class="citas-titulo">📅 Próximas citas</div>
+                ${citasCache.citas.map(c => `
+                  <div class="cumple-item">
+                    <span>${c.titulo}${c.asistente ? ' — ' + c.asistente : ''}</span>
+                    <span>${fmtHoraCita(c.inicio)}</span>
+                  </div>
+                `).join('')}
+              </div>`
+            : `<div class="citas-panel"><div class="citas-titulo">📅 Próximas citas</div><div class="citas-vacio">No tienes citas próximas.</div></div>`;
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Progreso de alumnas</h1>
+      <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
+      ${citasPanelHTML}
+      ${cumplePanelHTML}
+      <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
+    `;
+  }
+
+  async function fotoUrl(path) {
+    if (!path) return null;
+    const { data, error } = await supa.storage.from('progreso-fotos').createSignedUrl(path, 3600);
+    return (!error && data) ? data.signedUrl : null;
+  }
+
+  window.abrirAlumna = async function(id) {
+    vistaGrid = false;
+    const a = alumnasCache.find(x => x.id === id);
+    contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
+
+    const { data: progreso } = await supa
+      .from('progreso')
+      .select('id, fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
+      .eq('alumna_id', id)
+      .order('fecha', { ascending: false });
+
+    currentProgreso = progreso || [];
+    editingId = null;
+    animoSeleccionado = null;
+
+    const filas = (progreso || []).map(p => `
+      <tr>
+        <td>${fmtFecha(p.fecha)}</td>
+        <td>${p.peso_kg != null ? p.peso_kg + ' kg' : '—'}</td>
+        <td>${p.cintura_cm != null ? p.cintura_cm + ' cm' : '—'}</td>
+        <td>${p.cadera_cm != null ? p.cadera_cm + ' cm' : '—'}</td>
+        <td>${p.notas || p.medidas || '—'}</td>
+        <td style="font-size:17px;">${p.animo || '—'}</td>
+        <td>${p.foto_path ? `<span class="foto-thumb" data-path="${p.foto_path}">Ver foto</span>` : '—'}</td>
+        <td class="row-actions">
+          <button class="edit-btn" onclick="editarRegistro(${p.id})">Editar</button>
+          <button class="del-btn" onclick="borrarRegistro(${p.id}, '${id}')">Borrar</button>
+        </td>
+      </tr>
+    `).join('');
+
+    contentEl.innerHTML = `
+      <div class="detail-header">
+        <div>
+          <h1 class="greeting">${a.nombre || a.email}</h1>
+          <p class="greeting-sub" style="margin-bottom:0;">${a.email}</p>
+        </div>
+        <span class="back-link" onclick="renderGrid()">← Volver a todas</span>
+      </div>
+
+      ${(() => {
+        const ultimoPeso = (progreso || []).find(p => p.peso_kg != null);
+        const metaAlcanzada = a.peso_objetivo != null && ultimoPeso && Math.abs(ultimoPeso.peso_kg - a.peso_objetivo) < 0.5;
+        const tieneDatos = a.peso_objetivo != null || !!a.fecha_nacimiento || a.estatura_cm != null;
+        const resumenPartes = [];
+        if (a.peso_objetivo != null) resumenPartes.push(`Meta: <strong style="color:var(--texto);">${a.peso_objetivo} kg</strong>`);
+        if (a.fecha_nacimiento) resumenPartes.push(`Nació: <strong style="color:var(--texto);">${new Date(a.fecha_nacimiento + 'T00:00:00').toLocaleDateString('es-PE')}</strong>`);
+        if (a.estatura_cm != null) resumenPartes.push(`Estatura: <strong style="color:var(--texto);">${a.estatura_cm} cm</strong>`);
+        return `
+      <div class="entry-form" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin-bottom:0;">Datos de la alumna</h3>
+          ${tieneDatos ? `<span class="back-link" id="toggle-meta-form">✏️ Editar</span>` : ''}
+        </div>
+        ${metaAlcanzada ? `<div class="meta-box" style="margin:8px 0 16px;">🎉 Alcanzó su meta de <strong>${a.peso_objetivo} kg</strong>. Fija una nueva meta cuando quieras.</div>` : ''}
+        ${tieneDatos ? `<div id="meta-resumen" style="margin-top:10px; font-size:14px; color:var(--texto-suave);">${resumenPartes.join(' · ')}</div>` : ''}
+        <form id="meta-form" class="grid2" style="align-items:end; ${tieneDatos ? 'display:none; margin-top:16px;' : 'margin-top:8px;'}">
+          <div>
+            <label>Peso objetivo (kg)</label>
+            <input type="number" step="0.1" id="f-meta" placeholder="${metaAlcanzada ? 'Nueva meta' : 'Ej. 65'}" value="${metaAlcanzada ? '' : (a.peso_objetivo != null ? a.peso_objetivo : '')}">
+          </div>
+          <div>
+            <label>Fecha de nacimiento</label>
+            <input type="date" id="f-nacimiento" value="${a.fecha_nacimiento || ''}">
+          </div>
+          <div>
+            <label>Estatura (cm)</label>
+            <input type="number" step="0.1" id="f-estatura" placeholder="Ej. 162" value="${a.estatura_cm != null ? a.estatura_cm : ''}">
+          </div>
+          <button type="submit" class="btn-primary" style="margin-top:12px; grid-column:1/-1;">${tieneDatos ? 'Actualizar datos' : 'Guardar datos'}</button>
+        </form>
+      </div>`;
+      })()}
+
+      <div class="entry-form">
+        <h3 id="entry-form-title" style="margin-bottom:4px;">Agregar registro</h3>
+        <form id="entry-form">
+          <div class="grid2">
+            <div>
+              <label>Fecha</label>
+              <input type="date" id="f-fecha" value="${new Date().toISOString().slice(0,10)}" required>
+            </div>
+            <div>
+              <label>Peso (kg)</label>
+              <input type="number" step="0.1" id="f-peso" placeholder="Opcional">
+            </div>
+          </div>
+          <div class="grid2">
+            <div>
+              <label>Cintura (cm)</label>
+              <input type="number" step="0.1" id="f-cintura" placeholder="Opcional">
+            </div>
+            <div>
+              <label>Cadera (cm)</label>
+              <input type="number" step="0.1" id="f-cadera" placeholder="Opcional">
+            </div>
+          </div>
+          <label>Notas</label>
+          <textarea id="f-notas" placeholder="Cómo estuvo la sesión, ajustes, observaciones..."></textarea>
+          <label>Ícono de ánimo (opcional)</label>
+          <div class="animo-picker" id="animo-picker">
+            ${ICONOS_ANIMO.map(icono => `<button type="button" class="animo-btn" data-icono="${icono}">${icono}</button>`).join('')}
+          </div>
+          <label id="f-foto-label">Foto de progreso (opcional)</label>
+          <input type="file" id="f-foto" accept="image/*">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="btn-primary" id="entry-submit-btn">Guardar registro</button>
+            <span class="back-link" id="cancel-edit" style="display:none;">Cancelar edición</span>
+          </div>
+        </form>
+      </div>
+
+      <section class="block">
+        <h3>Historial</h3>
+        ${progreso && progreso.length ? `
+          <table class="progreso">
+            <thead><tr><th>Fecha</th><th>Peso</th><th>Cintura</th><th>Cadera</th><th>Notas</th><th>Ánimo</th><th>Foto</th><th></th></tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        ` : `<div class="empty-state">Todavía no hay registros para ella.</div>`}
+      </section>
+    `;
+
+    const toggleMetaBtn = document.getElementById('toggle-meta-form');
+    if (toggleMetaBtn) {
+      toggleMetaBtn.addEventListener('click', () => {
+        const formEl = document.getElementById('meta-form');
+        const resumenEl = document.getElementById('meta-resumen');
+        const abierto = formEl.style.display !== 'none';
+        formEl.style.display = abierto ? 'none' : '';
+        if (resumenEl) resumenEl.style.display = abierto ? '' : 'none';
+        toggleMetaBtn.textContent = abierto ? '✏️ Editar' : 'Cancelar';
+      });
+    }
+
+    document.getElementById('meta-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const val = document.getElementById('f-meta').value;
+      const nacimiento = document.getElementById('f-nacimiento').value;
+      const estatura = document.getElementById('f-estatura').value;
+      const { error } = await supa.from('alumnas').update({
+        peso_objetivo: val ? parseFloat(val) : null,
+        fecha_nacimiento: nacimiento || null,
+        estatura_cm: estatura ? parseFloat(estatura) : null,
+      }).eq('id', id);
+      if (error) { alert('No se pudo guardar: ' + error.message); return; }
+      a.peso_objetivo = val ? parseFloat(val) : null;
+      a.fecha_nacimiento = nacimiento || null;
+      a.estatura_cm = estatura ? parseFloat(estatura) : null;
+      window.abrirAlumna(id);
+    });
+
+    document.querySelectorAll('.animo-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const yaActivo = btn.classList.contains('active');
+        document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
+        if (yaActivo) {
+          animoSeleccionado = null;
+        } else {
+          btn.classList.add('active');
+          animoSeleccionado = btn.dataset.icono;
+        }
+      });
+    });
+
+    document.querySelectorAll('.foto-thumb').forEach(el => {
+      el.addEventListener('click', async () => {
+        el.textContent = 'Cargando...';
+        const url = await fotoUrl(el.dataset.path);
+        if (url) window.open(url, '_blank');
+        el.textContent = 'Ver foto';
+      });
+    });
+
+    window.editarRegistro = function(regId) {
+      const p = currentProgreso.find(x => x.id === regId);
+      if (!p) return;
+      editingId = regId;
+
+      document.getElementById('f-fecha').value = p.fecha;
+      document.getElementById('f-peso').value = p.peso_kg != null ? p.peso_kg : '';
+      document.getElementById('f-cintura').value = p.cintura_cm != null ? p.cintura_cm : '';
+      document.getElementById('f-cadera').value = p.cadera_cm != null ? p.cadera_cm : '';
+      document.getElementById('f-notas').value = p.notas || p.medidas || '';
+      document.getElementById('f-foto').value = '';
+
+      animoSeleccionado = p.animo || null;
+      document.querySelectorAll('.animo-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.icono === animoSeleccionado);
+      });
+
+      document.getElementById('entry-form-title').textContent = 'Editar registro del ' + fmtFecha(p.fecha);
+      document.getElementById('f-foto-label').textContent = p.foto_path
+        ? 'Reemplazar foto (opcional — deja vacío para conservar la actual)'
+        : 'Foto de progreso (opcional)';
+      document.getElementById('entry-submit-btn').textContent = 'Actualizar registro';
+      document.getElementById('cancel-edit').style.display = 'inline';
+
+      document.getElementById('entry-form').closest('.entry-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    function salirModoEdicion() {
+      editingId = null;
+      animoSeleccionado = null;
+      document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('entry-form').reset();
+      document.getElementById('f-fecha').value = new Date().toISOString().slice(0,10);
+      document.getElementById('entry-form-title').textContent = 'Agregar registro';
+      document.getElementById('f-foto-label').textContent = 'Foto de progreso (opcional)';
+      document.getElementById('entry-submit-btn').textContent = 'Guardar registro';
+      document.getElementById('cancel-edit').style.display = 'none';
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', salirModoEdicion);
+
+    document.getElementById('entry-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('entry-submit-btn');
+      const editando = editingId !== null;
+      submitBtn.disabled = true;
+      submitBtn.textContent = editando ? 'Actualizando...' : 'Guardando...';
+
+      const fecha = document.getElementById('f-fecha').value;
+      const peso = document.getElementById('f-peso').value;
+      const cintura = document.getElementById('f-cintura').value;
+      const cadera = document.getElementById('f-cadera').value;
+      const notas = document.getElementById('f-notas').value.trim();
+      const fotoFile = document.getElementById('f-foto').files[0];
+
+      let foto_path = editando ? (currentProgreso.find(x => x.id === editingId) || {}).foto_path || null : null;
+      if (fotoFile) {
+        const ext = fotoFile.name.split('.').pop();
+        const path = `${id}/${fecha}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supa.storage.from('progreso-fotos').upload(path, fotoFile);
+        if (upErr) {
+          alert('No se pudo subir la foto: ' + upErr.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
+          return;
+        }
+        foto_path = path;
+      }
+
+      const payload = {
+        fecha,
+        peso_kg: peso ? parseFloat(peso) : null,
+        cintura_cm: cintura ? parseFloat(cintura) : null,
+        cadera_cm: cadera ? parseFloat(cadera) : null,
+        notas: notas || null,
+        foto_path,
+        animo: animoSeleccionado,
+      };
+
+      const { error } = editando
+        ? await supa.from('progreso').update(payload).eq('id', editingId)
+        : await supa.from('progreso').insert({ alumna_id: id, ...payload });
+
+      if (error) {
+        alert('No se pudo guardar: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
+      } else {
+        abrirAlumna(id);
+      }
+    });
+  };
+
+  window.borrarRegistro = async function(regId, alumnaId) {
+    if (!confirm('¿Borrar este registro?')) return;
+    const { error } = await supa.from('progreso').delete().eq('id', regId);
+    if (error) { alert('No se pudo borrar: ' + error.message); return; }
+    abrirAlumna(alumnaId);
+  };
+
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await supa.auth.signOut();
+    window.location.href = 'index.html';
+  });
+
+  init();
+</script>
+
+</body>
+</html>

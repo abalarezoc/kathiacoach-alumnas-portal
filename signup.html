@@ -1,0 +1,120 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Crear tu cuenta — Kathia Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<div class="login-screen">
+  <div class="login-card">
+    <span class="wordmark">Kathia Coach<span>Especialista en musculación · Mujeres 40+</span></span>
+    <h2>Crea tu cuenta</h2>
+    <form id="signup-form">
+      <label for="nombre">Tu nombre</label>
+      <input type="text" id="nombre" required autocomplete="name">
+
+      <label for="nacimiento">Fecha de nacimiento (opcional)</label>
+      <input type="date" id="nacimiento">
+
+      <label for="estatura">Estatura en cm (opcional)</label>
+      <input type="number" step="0.1" id="estatura" placeholder="Ej. 162">
+
+      <label for="email">Correo</label>
+      <input type="email" id="email" required autocomplete="email">
+
+      <label for="password">Elige una contraseña</label>
+      <input type="password" id="password" required autocomplete="new-password" minlength="6">
+
+      <label for="password2">Repite la contraseña</label>
+      <input type="password" id="password2" required autocomplete="new-password" minlength="6">
+
+      <label for="codigo">Código de acceso</label>
+      <input type="text" id="codigo" required placeholder="Te lo pasó Kathia por WhatsApp">
+
+      <button type="submit" class="btn-primary" id="submit-btn">Crear mi cuenta</button>
+    </form>
+    <div id="error" class="error-msg" style="display:none;"></div>
+    <p class="help-note">¿Ya tienes cuenta? <a href="index.html">Inicia sesión</a></p>
+  </div>
+</div>
+
+<script>
+  const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+
+  const form = document.getElementById('signup-form');
+  const errorBox = document.getElementById('error');
+  const submitBtn = document.getElementById('submit-btn');
+
+  function showError(msg) {
+    errorBox.textContent = msg;
+    errorBox.style.display = 'block';
+  }
+
+  form.addEventListener('submit', async (e) => {
+    e.preventDefault();
+    errorBox.style.display = 'none';
+
+    const nombre = document.getElementById('nombre').value.trim();
+    const nacimiento = document.getElementById('nacimiento').value;
+    const estatura = document.getElementById('estatura').value;
+    const email = document.getElementById('email').value.trim();
+    const password = document.getElementById('password').value;
+    const password2 = document.getElementById('password2').value;
+    const codigo = document.getElementById('codigo').value.trim();
+
+    if (codigo !== ACCESS_CODE) {
+      showError('El código de acceso no es correcto. Pídeselo a Kathia por WhatsApp.');
+      return;
+    }
+    if (password !== password2) {
+      showError('Las contraseñas no coinciden.');
+      return;
+    }
+    if (password.length < 6) {
+      showError('La contraseña debe tener al menos 6 caracteres.');
+      return;
+    }
+
+    submitBtn.disabled = true;
+    submitBtn.textContent = 'Creando cuenta...';
+
+    const { data, error } = await supa.auth.signUp({ email, password });
+
+    if (error) {
+      showError(error.message.includes('already registered')
+        ? 'Ya existe una cuenta con ese correo. Intenta iniciar sesión.'
+        : 'No se pudo crear la cuenta: ' + error.message);
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Crear mi cuenta';
+      return;
+    }
+
+    if (!data.session) {
+      // La confirmación de correo sigue activada en Supabase — avisar y detener
+      showError('Cuenta creada, pero falta confirmar tu correo antes de poder entrar. Revisa tu bandeja de entrada, o pídele a Kathia que desactive la confirmación de correo en Supabase.');
+      submitBtn.disabled = false;
+      submitBtn.textContent = 'Crear mi cuenta';
+      return;
+    }
+
+    // Con sesión activa, completar su perfil
+    await supa.from('alumnas').update({
+      nombre,
+      fecha_nacimiento: nacimiento || null,
+      estatura_cm: estatura ? parseFloat(estatura) : null,
+    }).eq('id', data.user.id);
+
+    window.location.href = 'portal.html';
+  });
+</script>
+
+</body>
+</html>

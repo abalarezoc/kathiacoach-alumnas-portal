@@ -1,0 +1,294 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mi Progreso — Kathia Coach</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="stylesheet" href="styles.css">
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4/dist/chart.umd.min.js"></script>
+<script src="config.js"></script>
+</head>
+<body>
+
+<nav class="top">
+  <div class="wrap" id="nav-wrap">
+    <span class="wordmark">Kathia Coach<span>Portal de Alumnas</span></span>
+    <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
+  </div>
+</nav>
+
+<main class="portal">
+  <div class="wrap" id="content">
+    <div class="loading">Cargando tu información...</div>
+  </div>
+</main>
+
+<div class="lightbox" id="lightbox">
+  <span class="lightbox-close" id="lightbox-close">&times;</span>
+  <img id="lightbox-img" src="" alt="Foto de progreso">
+</div>
+
+<script>
+  const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+  const contentEl = document.getElementById('content');
+
+  function fmtFecha(iso) {
+    const d = new Date(iso + 'T00:00:00');
+    return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  function mensajeAnimo(n) {
+    if (n === 0) return 'Bienvenida. Muy pronto Kathia empezará a registrar aquí tu progreso, sesión a sesión.';
+    if (n === 1) return 'Tu primer registro ya quedó guardado. El camino empieza así.';
+    if (n <= 4) return `Llevas ${n} registros — la constancia ya está funcionando.`;
+    return `Llevas ${n} registros. Este historial ya cuenta una historia real de esfuerzo.`;
+  }
+
+  async function init() {
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    const user = session.user;
+
+    // Perfil de la alumna (nombre + si es admin + meta de peso)
+    const { data: perfil } = await supa
+      .from('alumnas')
+      .select('nombre, es_admin, peso_objetivo')
+      .eq('id', user.id)
+      .single();
+
+    const nombre = (perfil && perfil.nombre) ? perfil.nombre : user.email;
+
+    if (perfil && perfil.es_admin) {
+      document.getElementById('nav-wrap').insertAdjacentHTML('beforeend',
+        `<a href="admin.html" style="font-size:13px; margin-right:8px;">Panel de Kathia →</a>`);
+    }
+
+    // Su progreso, más reciente primero
+    const { data: progreso, error: progresoError } = await supa
+      .from('progreso')
+      .select('fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
+      .eq('alumna_id', user.id)
+      .order('fecha', { ascending: false });
+
+    const total = progreso ? progreso.length : 0;
+
+    let progresoHTML;
+    let chartsHTML = '';
+    let metaHTML = '';
+    let charts = [];
+
+    if (progresoError) {
+      progresoHTML = `<div class="empty-state">No se pudo cargar tu progreso. Intenta recargar la página.</div>`;
+    } else if (!progreso || progreso.length === 0) {
+      progresoHTML = `<div class="empty-state">Todavía no hay registros. Kathia irá agregando tus mediciones después de cada evaluación.</div>`;
+    } else {
+      // Línea de tiempo, tarjeta por sesión
+      progresoHTML = `<div class="timeline">` + progreso.map(p => {
+        const chips = [];
+        if (p.peso_kg != null) chips.push(`<span class="chip">⚖️ ${p.peso_kg} kg</span>`);
+        if (p.cintura_cm != null) chips.push(`<span class="chip">📏 Cintura ${p.cintura_cm} cm</span>`);
+        if (p.cadera_cm != null) chips.push(`<span class="chip">📏 Cadera ${p.cadera_cm} cm</span>`);
+        const nota = p.notas || p.medidas;
+        return `
+          <div class="timeline-item">
+            <div class="timeline-dot"></div>
+            <div class="timeline-card">
+              <div class="timeline-fecha">${fmtFecha(p.fecha)}${p.animo ? `<span class="animo-icon" title="Mensaje de ánimo de Kathia">${p.animo}</span>` : ''}</div>
+              ${chips.length ? `<div class="chip-row">${chips.join('')}</div>` : ''}
+              ${nota ? `<p class="timeline-nota">${nota}</p>` : ''}
+              ${p.foto_path ? `<span class="foto-link" data-path="${p.foto_path}">📷 Ver foto →</span>` : ''}
+            </div>
+          </div>
+        `;
+      }).join('') + `</div>`;
+
+      // Gráficos — uno por métrica, solo si hay 2+ datos
+      const cronologico = [...progreso].reverse();
+      const metricas = [
+        { id: 'peso-chart', label: 'Peso', unidad: 'kg', key: 'peso_kg', icon: '⚖️' },
+        { id: 'cintura-chart', label: 'Cintura', unidad: 'cm', key: 'cintura_cm', icon: '📏' },
+        { id: 'cadera-chart', label: 'Cadera', unidad: 'cm', key: 'cadera_cm', icon: '📏' },
+      ];
+      metricas.forEach(m => {
+        const serie = cronologico.filter(p => p[m.key] != null);
+        if (serie.length >= 2) charts.push({ ...m, serie });
+      });
+
+      // Tarjetas "Inicio → Ahora" por métrica
+      let statCardsHTML = '';
+      if (charts.length) {
+        statCardsHTML = charts.map(c => {
+          const inicial = c.serie[0][c.key];
+          const actual = c.serie[c.serie.length - 1][c.key];
+          const delta = actual - inicial;
+          const flecha = delta > 0 ? '↑' : (delta < 0 ? '↓' : '→');
+          return `
+            <div class="stat-card">
+              <div class="stat-icon">${c.icon}</div>
+              <div class="stat-label">${c.label}</div>
+              <div class="stat-values">${inicial} → <strong>${actual}</strong> ${c.unidad}</div>
+              <div class="stat-delta">${flecha} ${Math.abs(delta).toFixed(1)} ${c.unidad}</div>
+            </div>
+          `;
+        }).join('');
+      }
+
+      // Gráficos de línea (evolución en el tiempo)
+      if (charts.length) {
+        chartsHTML = `<div class="charts-grid">` + charts.map(c =>
+          `<div class="chart-card"><canvas id="${c.id}" height="150"></canvas></div>`
+        ).join('') + `</div>`;
+      }
+
+      // Meta de peso — anillo de avance si hay al menos 2 registros de peso, si no, texto simple
+      const seriePeso = cronologico.filter(p => p.peso_kg != null);
+      if (perfil && perfil.peso_objetivo != null && seriePeso.length >= 1) {
+        const ultimoPeso = seriePeso[seriePeso.length - 1].peso_kg;
+        const inicialPeso = seriePeso[0].peso_kg;
+        const diff = Math.abs(ultimoPeso - perfil.peso_objetivo);
+        const alcanzada = diff < 0.5;
+
+        if (seriePeso.length >= 2 && inicialPeso !== perfil.peso_objetivo) {
+          let pct = ((ultimoPeso - inicialPeso) / (perfil.peso_objetivo - inicialPeso)) * 100;
+          pct = Math.max(0, Math.min(100, Math.round(pct)));
+          metaHTML = `
+            <div class="meta-ring-card">
+              <div class="ring-wrap">
+                <canvas id="meta-ring" width="130" height="130"></canvas>
+                <div class="ring-center"><div class="ring-pct">${pct}%</div></div>
+              </div>
+              <div class="ring-caption">
+                ${alcanzada
+                  ? `🎉 ¡Llegaste a tu meta de <strong>${perfil.peso_objetivo} kg</strong>!`
+                  : `Vas al <strong>${pct}%</strong> de tu meta de <strong>${perfil.peso_objetivo} kg</strong>.`}
+              </div>
+            </div>
+          `;
+        } else {
+          metaHTML = alcanzada
+            ? `<div class="meta-box">🎯 ¡Llegaste a tu meta de <strong>${perfil.peso_objetivo} kg</strong>!</div>`
+            : `<div class="meta-box">🎯 Te faltan <strong>${diff.toFixed(1)} kg</strong> para tu meta de <strong>${perfil.peso_objetivo} kg</strong>.</div>`;
+        }
+      }
+
+      if (statCardsHTML) {
+        chartsHTML = `<div class="stat-cards">${statCardsHTML}</div>` + chartsHTML;
+      }
+    }
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Hola, ${nombre.split(' ')[0]}</h1>
+      <p class="greeting-sub" style="font-family:'Playfair Display', serif; font-style:italic; font-size:17px; color:var(--texto);">
+        “${mensajeAnimo(total)}”
+      </p>
+
+      <section class="block">
+        <h3>Tu progreso</h3>
+        ${metaHTML}
+        ${chartsHTML}
+        ${progresoHTML}
+      </section>
+
+      <section class="block">
+        <h3>Agendar una clase</h3>
+        <div class="booking-box">
+          <div id="my-cal-inline"></div>
+        </div>
+      </section>
+    `;
+
+    // Cal.com — embed oficial (se ajusta a su propio contenido, sin scroll interno fijo)
+    (function (C, A, L) { let p = function (a, ar) { a.q.push(ar); }; let d = C.document; C.Cal = C.Cal || function () { let cal = C.Cal; let ar = arguments; if (!cal.loaded) { cal.ns = {}; cal.q = cal.q || []; d.head.appendChild(d.createElement("script")).src = A; cal.loaded = true; } if (ar[0] === L) { const api = function () { p(api, arguments); }; const namespace = ar[1]; api.q = api.q || []; if (typeof namespace === "string") { cal.ns[namespace] = cal.ns[namespace] || api; p(cal.ns[namespace], ar); p(cal, ["initNamespace", namespace]); } else p(cal, ar); return; } p(cal, ar); }; })(window, "https://app.cal.com/embed/embed.js", "init");
+    const calCallLink = CALCOM_LINK.replace(/^https?:\/\/cal\.com\//, '');
+    Cal("init", "sesion-1-1", { origin: "https://cal.com" });
+    Cal.ns["sesion-1-1"]("inline", {
+      elementOrSelector: "#my-cal-inline",
+      config: { layout: "month_view" },
+      calLink: calCallLink,
+    });
+    Cal.ns["sesion-1-1"]("ui", {
+      hideEventTypeDetails: true,
+      showTimezoneWhenEventDetailsHidden: true,
+      layout: "month_view",
+    });
+
+    charts.forEach(c => {
+      new Chart(document.getElementById(c.id), {
+        type: 'line',
+        data: {
+          labels: c.serie.map(p => fmtFecha(p.fecha)),
+          datasets: [{
+            label: c.label,
+            data: c.serie.map(p => p[c.key]),
+            borderColor: '#B5714A',
+            backgroundColor: 'rgba(181,113,74,0.08)',
+            tension: 0.3,
+            fill: true,
+            pointBackgroundColor: '#B5714A',
+          }]
+        },
+        options: {
+          plugins: {
+            legend: { display: false },
+            title: { display: true, text: `${c.label} (${c.unidad})`, font: { family: 'Inter', size: 12.5, weight: '500' }, color: '#7A756B', padding: { bottom: 10 } }
+          },
+          scales: { y: { grid: { color: '#E5DFD3' } }, x: { grid: { display: false } } }
+        }
+      });
+    });
+
+    const ringEl = document.getElementById('meta-ring');
+    if (ringEl) {
+      const pct = parseInt(document.querySelector('.ring-pct').textContent, 10) || 0;
+      new Chart(ringEl, {
+        type: 'doughnut',
+        data: {
+          datasets: [{
+            data: [pct, 100 - pct],
+            backgroundColor: ['#B5714A', '#E5DFD3'],
+            borderWidth: 0,
+          }]
+        },
+        options: {
+          cutout: '75%',
+          plugins: { legend: { display: false }, tooltip: { enabled: false } },
+          animation: { duration: 700 },
+        }
+      });
+    }
+
+    document.querySelectorAll('.foto-link').forEach(el => {
+      el.addEventListener('click', async () => {
+        const original = el.textContent;
+        el.textContent = 'Cargando...';
+        const { data, error } = await supa.storage.from('progreso-fotos').createSignedUrl(el.dataset.path, 3600);
+        el.textContent = original;
+        if (!error && data) {
+          document.getElementById('lightbox-img').src = data.signedUrl;
+          document.getElementById('lightbox').classList.add('open');
+        }
+      });
+    });
+  }
+
+  function closeLightbox() { document.getElementById('lightbox').classList.remove('open'); }
+  document.getElementById('lightbox-close').addEventListener('click', closeLightbox);
+  document.getElementById('lightbox').addEventListener('click', (e) => {
+    if (e.target.id === 'lightbox') closeLightbox();
+  });
+
+  document.getElementById('logout-btn').addEventListener('click', async () => {
+    await supa.auth.signOut();
+    window.location.href = 'index.html';
+  });
+
+  init();
+</script>
+
+</body>
+</html>

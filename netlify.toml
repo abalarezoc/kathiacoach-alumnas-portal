@@ -1,0 +1,11 @@
+# Configuración de Netlify para el Portal de Alumnas.
+#
+# publish "." significa que todo lo que está en esta carpeta (los
+# .html, styles.css, etc.) se publica tal cual, igual que cuando se
+# arrastraba el zip. La diferencia es que ahora Netlify también
+# reconoce la carpeta netlify/functions/ y publica la función que
+# consulta Cal.com.
+
+[build]
+  publish = "."
+  functions = "netlify/functions"
