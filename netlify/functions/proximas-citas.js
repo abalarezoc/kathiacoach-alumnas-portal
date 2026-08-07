@@ -23,7 +23,7 @@ exports.handler = async function () {
   }
 
   try {
-    const resp = await fetch('https://api.cal.com/v2/bookings?status=upcoming&take=15', {
+    const resp = await fetch('https://api.cal.com/v2/bookings?status=upcoming&take=50', {
       headers: {
         'Authorization': `Bearer ${apiKey}`,
         'cal-api-version': '2024-08-13',
@@ -50,6 +50,7 @@ exports.handler = async function () {
         fin: b.end || b.endTime || null,
         estado: b.status || null,
         asistente: (b.attendees && b.attendees[0] && b.attendees[0].name) || null,
+        email: (b.attendees && b.attendees[0] && b.attendees[0].email) || null,
       }))
       .filter((c) => c.inicio)
       .sort((x, y) => new Date(x.inicio) - new Date(y.inicio));
