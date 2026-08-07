@@ -122,6 +122,17 @@ table.progreso tr:last-child td { border-bottom: none; }
 .citas-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
 .citas-vacio { font-size: 13.5px; color: var(--texto-suave); }
 
+/* --- Agenda (landing del panel) --- */
+.agenda-panel { display: flex; flex-direction: column; gap: 18px; }
+.agenda-dia { background: #fff; border: 1px solid var(--linea); padding: 16px 20px; animation: fadeUp .3s ease backwards; }
+.agenda-dia-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
+.agenda-item { display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
+.agenda-item:last-child { border-bottom: none; }
+.agenda-hora { font-weight: 600; color: var(--acento); min-width: 68px; }
+.agenda-alumna { color: var(--texto); }
+.agenda-alumna-link { color: var(--acento); cursor: pointer; text-decoration: underline; }
+.agenda-alumna-link:hover { opacity: .8; }
+
 .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .back-link { font-size: 13.5px; color: var(--texto-suave); cursor: pointer; }
 .back-link:hover { color: var(--acento); }
