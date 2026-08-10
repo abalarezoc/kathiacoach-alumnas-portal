@@ -18,6 +18,7 @@
     <span class="wordmark" onclick="renderAgenda()" style="cursor:pointer;">Kathia Coach<span>Panel de Progreso</span></span>
     <div style="display:flex; gap:10px; align-items:center;">
       <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
+      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
       <button class="logout-btn" onclick="renderGrid()">📊 Indicadores</button>
       <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
@@ -244,6 +245,80 @@
       <p class="greeting-sub">Tus próximas sesiones agendadas en Cal.com. Haz clic en una alumna para revisar su progreso antes de la clase.</p>
       <div class="agenda-panel">${cuerpoHTML}</div>
     `;
+  }
+
+  function renderInvitar() {
+    vistaActual = 'invitar';
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Nuevas alumnas</h1>
+      <p class="greeting-sub">Invita a una alumna nueva a crear su cuenta — el mensaje ya viene listo con el link y el código, solo lo revisas y lo envías por WhatsApp.</p>
+      <div class="entry-form">
+        <label>Nombre de la alumna</label>
+        <input type="text" id="inv-nombre" placeholder="Ej. María González">
+
+        <label>Su WhatsApp (sin +51, solo los 9 dígitos)</label>
+        <input type="text" id="inv-whatsapp" placeholder="Ej. 987654321">
+
+        <label>Mensaje (puedes editarlo antes de enviar)</label>
+        <textarea id="inv-mensaje" style="min-height:170px;"></textarea>
+
+        <div style="display:flex; gap:14px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+          <a href="#" id="inv-enviar" class="btn-primary" style="text-decoration:none; text-align:center; display:inline-block; margin-top:0;" target="_blank" rel="noopener">Abrir WhatsApp y enviar</a>
+          <span class="back-link" id="inv-restaurar">Restaurar mensaje</span>
+        </div>
+      </div>
+    `;
+
+    function mensajeDefault(nombre) {
+      const n = (nombre || '').trim();
+      return `¡Hola${n ? ' ' + n : ''}! 🎉 Bienvenida a Kathia Coach.\n\nPara crear tu cuenta y ver tu progreso, entra aquí:\nhttps://kathiacoach-alumnas.netlify.app/signup.html\n\nTu código de acceso es: ${ACCESS_CODE}\n\n¡Nos vemos pronto! 💪`;
+    }
+
+    const nombreEl = document.getElementById('inv-nombre');
+    const whatsappEl = document.getElementById('inv-whatsapp');
+    const mensajeEl = document.getElementById('inv-mensaje');
+    const enviarEl = document.getElementById('inv-enviar');
+
+    mensajeEl.value = mensajeDefault('');
+    mensajeEl.dataset.editado = 'false';
+
+    function actualizarLinkEnvio() {
+      let numero = whatsappEl.value.replace(/[^\d]/g, '');
+      if (numero.length === 9) numero = '51' + numero;
+      const texto = encodeURIComponent(mensajeEl.value);
+      if (numero) {
+        enviarEl.href = `https://wa.me/${numero}?text=${texto}`;
+        enviarEl.style.opacity = '1';
+        enviarEl.style.pointerEvents = 'auto';
+      } else {
+        enviarEl.href = '#';
+        enviarEl.style.opacity = '.5';
+        enviarEl.style.pointerEvents = 'none';
+      }
+    }
+
+    nombreEl.addEventListener('input', () => {
+      if (mensajeEl.dataset.editado !== 'true') {
+        mensajeEl.value = mensajeDefault(nombreEl.value);
+      }
+      actualizarLinkEnvio();
+    });
+
+    mensajeEl.addEventListener('input', () => {
+      mensajeEl.dataset.editado = 'true';
+      actualizarLinkEnvio();
+    });
+
+    whatsappEl.addEventListener('input', actualizarLinkEnvio);
+
+    document.getElementById('inv-restaurar').addEventListener('click', () => {
+      mensajeEl.value = mensajeDefault(nombreEl.value);
+      mensajeEl.dataset.editado = 'false';
+      actualizarLinkEnvio();
+    });
+
+    actualizarLinkEnvio();
   }
 
   function renderGrid() {
