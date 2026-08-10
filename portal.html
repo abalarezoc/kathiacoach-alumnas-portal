@@ -61,12 +61,10 @@
       .eq('id', user.id)
       .single();
 
-    const nombre = (perfil && perfil.nombre) ? perfil.nombre : user.email;
+    // Las administradoras no ven este portal — van directo a su propio panel
+    if (perfil && perfil.es_admin) { window.location.href = 'admin.html'; return; }
 
-    if (perfil && perfil.es_admin) {
-      document.getElementById('nav-wrap').insertAdjacentHTML('beforeend',
-        `<a href="admin.html" style="font-size:13px; margin-right:8px;">Panel de Kathia →</a>`);
-    }
+    const nombre = (perfil && perfil.nombre) ? perfil.nombre : user.email;
 
     // Su progreso, más reciente primero
     const { data: progreso, error: progresoError } = await supa
