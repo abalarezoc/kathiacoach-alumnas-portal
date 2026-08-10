@@ -18,7 +18,7 @@
     <span class="wordmark" onclick="renderAgenda()" style="cursor:pointer;">Kathia Coach<span>Panel de Progreso</span></span>
     <div style="display:flex; gap:10px; align-items:center;">
       <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
-      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
+      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
       <button class="logout-btn" onclick="renderGrid()">📊 Indicadores</button>
       <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
@@ -98,6 +98,7 @@
     const { data: alumnas, error } = await supa
       .from('alumnas')
       .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm, plan_ejercicios')
+      .eq('es_admin', false)
       .order('nombre', { ascending: true });
 
     if (error) {
@@ -134,6 +135,11 @@
       ultimaCadera: resumen[a.id] ? resumen[a.id].ultimaCadera : null,
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
     }));
+
+    // Puntito discreto en "Nuevas alumnas" si hay alguna sin ningún registro todavía
+    const hayNuevas = alumnasCache.some(a => a.total === 0);
+    const dot = document.getElementById('nuevas-dot');
+    if (dot) dot.style.display = hayNuevas ? 'block' : 'none';
 
     renderAgenda();
     cargarCitas();
