@@ -82,6 +82,12 @@ table.progreso tr:last-child td { border-bottom: none; }
 .booking-box { background: #fff; border: 1px solid var(--linea); padding: 4px; min-height: 80px; }
 .booking-box #my-cal-inline { width: 100%; }
 
+/* En pantallas grandes, el calendario se ensancha (rompe el ancho de .wrap) para que
+   Cal.com muestre el mes compacto con las horas al lado, en vez de apilado y alto */
+@media (min-width: 900px) {
+  .booking-box { width: 900px; max-width: 900px; margin-left: calc(50% - 450px); }
+}
+
 .loading { text-align: center; color: var(--texto-suave); padding: 60px 0; font-size: 14.5px; }
 
 /* --- Admin dashboard --- */
