@@ -32,8 +32,12 @@ nav.top .wrap { display: flex; justify-content: space-between; align-items: cent
 }
 .logout-btn:hover { border-color: var(--acento); color: var(--acento); }
 
-/* Puntito discreto: avisa que hay alumnas nuevas sin revisar, sin agregar texto ni números */
-.nav-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #c0392b; }
+/* Burbuja discreta con número: avisa cuántas alumnas nuevas hay sin revisar */
+.nav-dot {
+  position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 3px;
+  border-radius: 999px; background: #c0392b; color: #fff; font-size: 10px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
 
 /* --- Login --- */
 .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
