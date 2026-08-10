@@ -97,7 +97,7 @@
 
     const { data: alumnas, error } = await supa
       .from('alumnas')
-      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm, plan_ejercicios')
+      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm')
       .eq('es_admin', false)
       .order('nombre', { ascending: true });
 
@@ -432,15 +432,6 @@
         <span class="back-link" onclick="volverDesdeDetalle()">← Volver</span>
       </div>
 
-      <div class="entry-form" style="margin-bottom:20px;">
-        <h3 style="margin-bottom:4px;">Plan de ejercicios</h3>
-        <p class="card-meta" style="margin-bottom:10px;">Para preparar la próxima sesión de ${a.nombre || a.email}.</p>
-        <form id="plan-form">
-          <textarea id="f-plan" placeholder="Ej. Sentadilla 4x10, peso muerto rumano 3x12, plancha 3x30s...">${a.plan_ejercicios || ''}</textarea>
-          <button type="submit" class="btn-primary" style="margin-top:12px;">Guardar plan</button>
-        </form>
-      </div>
-
       ${(() => {
         const ultimoPeso = (progreso || []).find(p => p.peso_kg != null);
         const metaAlcanzada = a.peso_objetivo != null && ultimoPeso && Math.abs(ultimoPeso.peso_kg - a.peso_objetivo) < 0.5;
@@ -541,19 +532,6 @@
       a.fecha_nacimiento = nacimiento || null;
       a.estatura_cm = estatura ? parseFloat(estatura) : null;
       window.abrirAlumna(id);
-    });
-
-    document.getElementById('plan-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const submitBtn = e.target.querySelector('button[type="submit"]');
-      const val = document.getElementById('f-plan').value.trim();
-      submitBtn.disabled = true;
-      submitBtn.textContent = 'Guardando...';
-      const { error } = await supa.from('alumnas').update({ plan_ejercicios: val || null }).eq('id', id);
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Guardar plan';
-      if (error) { alert('No se pudo guardar: ' + error.message); return; }
-      a.plan_ejercicios = val || null;
     });
 
     document.querySelectorAll('.animo-btn').forEach(btn => {
