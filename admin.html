@@ -18,8 +18,8 @@
     <span class="wordmark" onclick="renderAgenda()" style="cursor:pointer;">Kathia Coach<span>Panel de Progreso</span></span>
     <div style="display:flex; gap:10px; align-items:center;">
       <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
-      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
-      <button class="logout-btn" onclick="renderGrid()">📊 Indicadores</button>
+      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
+      <button class="logout-btn" onclick="renderGrid()">📊 Indicadores<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
       <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
     </div>
@@ -136,10 +136,13 @@
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
     }));
 
-    // Puntito discreto en "Nuevas alumnas" si hay alguna sin ningún registro todavía
-    const hayNuevas = alumnasCache.some(a => a.total === 0);
+    // Puntito con número en "Indicadores" si hay alumnas sin ningún registro todavía
+    const numNuevas = alumnasCache.filter(a => a.total === 0).length;
     const dot = document.getElementById('nuevas-dot');
-    if (dot) dot.style.display = hayNuevas ? 'block' : 'none';
+    if (dot) {
+      dot.textContent = numNuevas;
+      dot.style.display = numNuevas > 0 ? 'flex' : 'none';
+    }
 
     renderAgenda();
     cargarCitas();
