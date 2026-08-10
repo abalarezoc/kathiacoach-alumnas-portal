@@ -55,6 +55,14 @@ input:focus { outline: none; border-color: var(--acento); }
 .error-msg { color: #A13A3A; font-size: 13.5px; margin-top: 14px; text-align: center; }
 .help-note { text-align: center; font-size: 12.5px; color: var(--texto-suave); margin-top: 24px; }
 
+/* --- Registro (signup): bienvenida y organización por secciones --- */
+.signup-intro { text-align: center; font-size: 14px; color: var(--texto-suave); margin: -14px 0 4px; line-height: 1.5; }
+.form-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--linea); }
+.form-section:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
+.form-section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--acento); font-weight: 600; }
+.form-section label:first-of-type { margin-top: 6px; }
+.opcional { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--texto-suave); font-size: 12px; }
+
 /* --- Portal --- */
 main.portal { padding: 48px 0 80px; }
 .greeting { font-size: 26px; margin-bottom: 6px; }
