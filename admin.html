@@ -108,21 +108,19 @@
 
     const { data: progresoTodo } = await supa
       .from('progreso')
-      .select('alumna_id, fecha, peso_kg, cintura_cm, cadera_cm')
+      .select('alumna_id, fecha, peso_kg')
       .order('fecha', { ascending: false });
 
-    // Resumen por alumna: cantidad de registros, último registro, últimas medidas y últimos 2 pesos (para el semáforo)
+    // Resumen por alumna: cantidad de registros, último registro y últimos 2 pesos (para el semáforo)
     const resumen = {};
     (progresoTodo || []).forEach(p => {
       if (!resumen[p.alumna_id]) {
-        resumen[p.alumna_id] = { total: 0, ultima: null, ultimoPeso: null, ultimaCintura: null, ultimaCadera: null, pesos: [] };
+        resumen[p.alumna_id] = { total: 0, ultima: null, ultimoPeso: null, pesos: [] };
       }
       const r = resumen[p.alumna_id];
       r.total++;
       if (!r.ultima) r.ultima = p.fecha;
       if (r.ultimoPeso == null && p.peso_kg != null) r.ultimoPeso = p.peso_kg;
-      if (r.ultimaCintura == null && p.cintura_cm != null) r.ultimaCintura = p.cintura_cm;
-      if (r.ultimaCadera == null && p.cadera_cm != null) r.ultimaCadera = p.cadera_cm;
       if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
     });
 
@@ -131,8 +129,6 @@
       total: resumen[a.id] ? resumen[a.id].total : 0,
       ultima: resumen[a.id] ? resumen[a.id].ultima : null,
       ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
-      ultimaCintura: resumen[a.id] ? resumen[a.id].ultimaCintura : null,
-      ultimaCadera: resumen[a.id] ? resumen[a.id].ultimaCadera : null,
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
     }));
 
@@ -202,12 +198,6 @@
     else if (imc < 30) categoria = 'Sobrepeso';
     else categoria = 'Obesidad';
     return { valor: imc.toFixed(1), categoria };
-  }
-
-  // ICC (índice cintura-cadera): se calcula solo con datos que ya se registran (sin pedirle nada nuevo a Kathia).
-  function iccFor(cinturaCm, caderaCm) {
-    if (cinturaCm == null || caderaCm == null) return null;
-    return (cinturaCm / caderaCm).toFixed(2);
   }
 
   function renderAgenda() {
@@ -338,14 +328,10 @@
 
       const medidas = [];
       if (a.ultimoPeso != null) medidas.push(`⚖️ ${a.ultimoPeso}kg`);
-      if (a.ultimaCintura != null) medidas.push(`Cint. ${a.ultimaCintura}cm`);
-      if (a.ultimaCadera != null) medidas.push(`Cad. ${a.ultimaCadera}cm`);
 
       const imc = imcFor(a.ultimoPeso, a.estatura_cm);
-      const icc = iccFor(a.ultimaCintura, a.ultimaCadera);
       const indices = [];
       if (imc) indices.push(`IMC ${imc.valor} (${imc.categoria})`);
-      if (icc) indices.push(`ICC ${icc}`);
 
       let edadHTML = '';
       if (a.fecha_nacimiento) {
@@ -415,7 +401,7 @@
 
     const { data: progreso } = await supa
       .from('progreso')
-      .select('id, fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
+      .select('id, fecha, peso_kg, medidas, notas, foto_path, animo')
       .eq('alumna_id', id)
       .order('fecha', { ascending: false });
 
@@ -427,8 +413,6 @@
       <tr>
         <td>${fmtFecha(p.fecha)}</td>
         <td>${p.peso_kg != null ? p.peso_kg + ' kg' : '—'}</td>
-        <td>${p.cintura_cm != null ? p.cintura_cm + ' cm' : '—'}</td>
-        <td>${p.cadera_cm != null ? p.cadera_cm + ' cm' : '—'}</td>
         <td>${p.notas || p.medidas || '—'}</td>
         <td style="font-size:17px;">${p.animo || '—'}</td>
         <td>${p.foto_path ? `<span class="foto-thumb" data-path="${p.foto_path}">Ver foto</span>` : '—'}</td>
@@ -504,16 +488,6 @@
               <input type="number" step="0.1" id="f-peso" placeholder="Opcional">
             </div>
           </div>
-          <div class="grid2">
-            <div>
-              <label>Cintura (cm)</label>
-              <input type="number" step="0.1" id="f-cintura" placeholder="Opcional">
-            </div>
-            <div>
-              <label>Cadera (cm)</label>
-              <input type="number" step="0.1" id="f-cadera" placeholder="Opcional">
-            </div>
-          </div>
           <label>Notas</label>
           <textarea id="f-notas" placeholder="Cómo estuvo la sesión, ajustes, observaciones..."></textarea>
           <label>Ícono de ánimo (opcional)</label>
@@ -533,7 +507,7 @@
         <h3>Historial</h3>
         ${progreso && progreso.length ? `
           <table class="progreso">
-            <thead><tr><th>Fecha</th><th>Peso</th><th>Cintura</th><th>Cadera</th><th>Notas</th><th>Ánimo</th><th>Foto</th><th></th></tr></thead>
+            <thead><tr><th>Fecha</th><th>Peso</th><th>Notas</th><th>Ánimo</th><th>Foto</th><th></th></tr></thead>
             <tbody>${filas}</tbody>
           </table>
         ` : `<div class="empty-state">Todavía no hay registros para ella.</div>`}
@@ -611,8 +585,6 @@
 
       document.getElementById('f-fecha').value = p.fecha;
       document.getElementById('f-peso').value = p.peso_kg != null ? p.peso_kg : '';
-      document.getElementById('f-cintura').value = p.cintura_cm != null ? p.cintura_cm : '';
-      document.getElementById('f-cadera').value = p.cadera_cm != null ? p.cadera_cm : '';
       document.getElementById('f-notas').value = p.notas || p.medidas || '';
       document.getElementById('f-foto').value = '';
 
@@ -654,8 +626,6 @@
 
       const fecha = document.getElementById('f-fecha').value;
       const peso = document.getElementById('f-peso').value;
-      const cintura = document.getElementById('f-cintura').value;
-      const cadera = document.getElementById('f-cadera').value;
       const notas = document.getElementById('f-notas').value.trim();
       const fotoFile = document.getElementById('f-foto').files[0];
 
@@ -676,8 +646,6 @@
       const payload = {
         fecha,
         peso_kg: peso ? parseFloat(peso) : null,
-        cintura_cm: cintura ? parseFloat(cintura) : null,
-        cadera_cm: cadera ? parseFloat(cadera) : null,
         notas: notas || null,
         foto_path,
         animo: animoSeleccionado,
