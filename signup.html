@@ -1,120 +1,234 @@
-<!DOCTYPE html>
-<html lang="es">
-<head>
-<meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Crear tu cuenta — Kathia Coach</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Playfair+Display:wght@500;600&family=Inter:wght@400;500;600&display=swap" rel="stylesheet">
-<link rel="stylesheet" href="styles.css">
-<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2/dist/umd/supabase.min.js"></script>
-<script src="config.js"></script>
-</head>
-<body>
+:root {
+  --acento: #B5714A;
+  --acento-suave: #E9D9C9;
+  --texto: #33302B;
+  --texto-suave: #7A756B;
+  --crema: #FBF8F3;
+  --linea: #E5DFD3;
+}
+* { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  font-family: 'Inter', -apple-system, sans-serif;
+  color: var(--texto);
+  background: var(--crema);
+  line-height: 1.6;
+  min-height: 100vh;
+}
+h1, h2, h3 { font-family: 'Playfair Display', serif; font-weight: 600; color: var(--texto); }
+a { color: var(--acento); }
 
-<div class="login-screen">
-  <div class="login-card">
-    <span class="wordmark">Kathia Coach<span>Especialista en musculación · Mujeres 40+</span></span>
-    <h2>Crea tu cuenta</h2>
-    <form id="signup-form">
-      <label for="nombre">Tu nombre</label>
-      <input type="text" id="nombre" required autocomplete="name">
+.wrap { max-width: 720px; margin: 0 auto; padding: 0 24px; }
 
-      <label for="nacimiento">Fecha de nacimiento (opcional)</label>
-      <input type="date" id="nacimiento">
+nav.top {
+  padding: 24px 0; border-bottom: 1px solid var(--linea); background: var(--crema);
+}
+nav.top .wrap { display: flex; justify-content: space-between; align-items: center; }
+.wordmark { font-family: 'Playfair Display', serif; font-size: 19px; font-weight: 600; }
+.wordmark span { display: block; font-family: 'Inter', sans-serif; font-size: 11px; font-weight: 400; color: var(--texto-suave); margin-top: 2px; }
+.logout-btn {
+  background: none; border: 1px solid var(--linea); color: var(--texto-suave);
+  padding: 8px 16px; border-radius: 2px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif;
+}
+.logout-btn:hover { border-color: var(--acento); color: var(--acento); }
 
-      <label for="estatura">Estatura en cm (opcional)</label>
-      <input type="number" step="0.1" id="estatura" placeholder="Ej. 162">
+/* --- Login --- */
+.login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
+.login-card {
+  background: #fff; border: 1px solid var(--linea); border-top: 3px solid var(--acento);
+  padding: 44px 40px; max-width: 380px; width: 100%;
+}
+.login-card .wordmark { text-align: center; display: block; margin-bottom: 4px; }
+.login-card .tagline { text-align: center; font-size: 12.5px; color: var(--texto-suave); margin-bottom: 32px; }
+.login-card h2 { font-size: 20px; margin-bottom: 22px; text-align: center; }
+label { display: block; font-size: 13px; color: var(--texto-suave); margin-bottom: 6px; margin-top: 16px; }
+input[type="email"], input[type="password"] {
+  width: 100%; padding: 11px 12px; border: 1px solid var(--linea); border-radius: 2px;
+  font-family: 'Inter', sans-serif; font-size: 14.5px; color: var(--texto); background: var(--crema);
+}
+input:focus { outline: none; border-color: var(--acento); }
+.btn-primary {
+  width: 100%; margin-top: 24px; padding: 13px; background: var(--acento); color: #fff;
+  border: none; border-radius: 2px; font-family: 'Inter', sans-serif; font-weight: 500; font-size: 14.5px; cursor: pointer;
+}
+.btn-primary:hover { opacity: .9; }
+.btn-primary:disabled { opacity: .5; cursor: default; }
+.error-msg { color: #A13A3A; font-size: 13.5px; margin-top: 14px; text-align: center; }
+.help-note { text-align: center; font-size: 12.5px; color: var(--texto-suave); margin-top: 24px; }
 
-      <label for="email">Correo</label>
-      <input type="email" id="email" required autocomplete="email">
+/* --- Registro (signup): bienvenida y organización por secciones --- */
+.signup-intro { text-align: center; font-size: 14px; color: var(--texto-suave); margin: -14px 0 4px; line-height: 1.5; }
+.form-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--linea); }
+.form-section:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
+.form-section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--acento); font-weight: 600; }
+.form-section label:first-of-type { margin-top: 6px; }
+.opcional { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--texto-suave); font-size: 12px; }
 
-      <label for="password">Elige una contraseña</label>
-      <input type="password" id="password" required autocomplete="new-password" minlength="6">
+/* --- Portal --- */
+main.portal { padding: 48px 0 80px; }
+.greeting { font-size: 26px; margin-bottom: 6px; }
+.greeting-sub { color: var(--texto-suave); font-size: 15px; margin-bottom: 44px; }
 
-      <label for="password2">Repite la contraseña</label>
-      <input type="password" id="password2" required autocomplete="new-password" minlength="6">
+section.block { margin-bottom: 48px; }
+section.block h3 { font-size: 18px; margin-bottom: 18px; }
 
-      <label for="codigo">Código de acceso</label>
-      <input type="text" id="codigo" required placeholder="Te lo pasó Kathia por WhatsApp">
+table.progreso { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--linea); }
+table.progreso th, table.progreso td { padding: 12px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--linea); }
+table.progreso th { background: var(--acento-suave); color: var(--texto); font-weight: 600; font-size: 12.5px; text-transform: uppercase; letter-spacing: .04em; }
+table.progreso tr:last-child td { border-bottom: none; }
 
-      <button type="submit" class="btn-primary" id="submit-btn">Crear mi cuenta</button>
-    </form>
-    <div id="error" class="error-msg" style="display:none;"></div>
-    <p class="help-note">¿Ya tienes cuenta? <a href="index.html">Inicia sesión</a></p>
-  </div>
-</div>
+.empty-state { background: #fff; border: 1px dashed var(--linea); padding: 32px; text-align: center; color: var(--texto-suave); font-size: 14.5px; }
 
-<script>
-  const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
+.booking-box { background: #fff; border: 1px solid var(--linea); padding: 4px; min-height: 80px; }
+.booking-box #my-cal-inline { width: 100%; }
 
-  const form = document.getElementById('signup-form');
-  const errorBox = document.getElementById('error');
-  const submitBtn = document.getElementById('submit-btn');
+.loading { text-align: center; color: var(--texto-suave); padding: 60px 0; font-size: 14.5px; }
 
-  function showError(msg) {
-    errorBox.textContent = msg;
-    errorBox.style.display = 'block';
-  }
+/* --- Admin dashboard --- */
+@keyframes fadeUp { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
 
-  form.addEventListener('submit', async (e) => {
-    e.preventDefault();
-    errorBox.style.display = 'none';
+.wrap-wide { max-width: 960px; margin: 0 auto; padding: 0 24px; }
 
-    const nombre = document.getElementById('nombre').value.trim();
-    const nacimiento = document.getElementById('nacimiento').value;
-    const estatura = document.getElementById('estatura').value;
-    const email = document.getElementById('email').value.trim();
-    const password = document.getElementById('password').value;
-    const password2 = document.getElementById('password2').value;
-    const codigo = document.getElementById('codigo').value.trim();
+.alumnas-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(230px, 1fr)); gap: 18px; }
+.alumna-card {
+  background: #fff; border: 1px solid var(--linea); border-top: 3px solid var(--linea);
+  padding: 20px; cursor: pointer; transition: transform .15s ease, border-color .15s ease;
+  animation: fadeUp .35s ease backwards;
+}
+.alumna-card:hover { transform: translateY(-2px); border-top-color: var(--acento); }
+.alumna-card .nombre { font-family: 'Playfair Display', serif; font-size: 17px; margin-bottom: 4px; }
+.alumna-card .email { font-size: 12.5px; color: var(--texto-suave); margin-bottom: 14px; }
+.badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 500; }
+.badge.al-dia { background: #E7EFE3; color: #4A6B3A; }
+.badge.pendiente { background: #F5E6D8; color: #A16A2E; }
+.badge.nueva { background: var(--acento-suave); color: var(--acento); }
+.badge-row { display: flex; flex-wrap: wrap; gap: 6px; }
+.badge.sf-verde { background: #E7EFE3; color: #4A6B3A; }
+.badge.sf-amarillo { background: #FBF0D9; color: #93701C; }
+.badge.sf-rojo { background: #F5E0DC; color: #A13A3A; }
+.badge.sf-gris { background: var(--linea); color: var(--texto-suave); }
+.card-meta { margin-top: 10px; font-size: 12.5px; color: var(--texto-suave); }
+.card-medidas { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
-    if (codigo !== ACCESS_CODE) {
-      showError('El código de acceso no es correcto. Pídeselo a Kathia por WhatsApp.');
-      return;
-    }
-    if (password !== password2) {
-      showError('Las contraseñas no coinciden.');
-      return;
-    }
-    if (password.length < 6) {
-      showError('La contraseña debe tener al menos 6 caracteres.');
-      return;
-    }
+/* --- Panel de próximos cumpleaños --- */
+.cumple-panel {
+  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
+  padding: 16px 20px; margin-bottom: 24px;
+}
+.cumple-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.cumple-item {
+  display: flex; justify-content: space-between; font-size: 13.5px; color: var(--texto-suave);
+  padding: 6px 0; border-bottom: 1px solid var(--linea);
+}
+.cumple-item:last-child { border-bottom: none; }
+.cumple-item span:first-child { color: var(--texto); font-weight: 500; }
 
-    submitBtn.disabled = true;
-    submitBtn.textContent = 'Creando cuenta...';
+/* --- Panel de próximas citas (Cal.com) --- */
+.citas-panel {
+  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
+  padding: 16px 20px; margin-bottom: 24px;
+}
+.citas-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.citas-vacio { font-size: 13.5px; color: var(--texto-suave); }
 
-    const { data, error } = await supa.auth.signUp({ email, password });
+/* --- Agenda (landing del panel) --- */
+.agenda-panel { display: flex; flex-direction: column; gap: 18px; }
+.agenda-dia { background: #fff; border: 1px solid var(--linea); padding: 16px 20px; animation: fadeUp .3s ease backwards; }
+.agenda-dia-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
+.agenda-item { display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
+.agenda-item:last-child { border-bottom: none; }
+.agenda-hora { font-weight: 600; color: var(--acento); min-width: 68px; }
+.agenda-alumna { color: var(--texto); }
+.agenda-alumna-link { color: var(--acento); cursor: pointer; text-decoration: underline; }
+.agenda-alumna-link:hover { opacity: .8; }
 
-    if (error) {
-      showError(error.message.includes('already registered')
-        ? 'Ya existe una cuenta con ese correo. Intenta iniciar sesión.'
-        : 'No se pudo crear la cuenta: ' + error.message);
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Crear mi cuenta';
-      return;
-    }
+.detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
+.back-link { font-size: 13.5px; color: var(--texto-suave); cursor: pointer; }
+.back-link:hover { color: var(--acento); }
 
-    if (!data.session) {
-      // La confirmación de correo sigue activada en Supabase — avisar y detener
-      showError('Cuenta creada, pero falta confirmar tu correo antes de poder entrar. Revisa tu bandeja de entrada, o pídele a Kathia que desactive la confirmación de correo en Supabase.');
-      submitBtn.disabled = false;
-      submitBtn.textContent = 'Crear mi cuenta';
-      return;
-    }
+.entry-form { background: #fff; border: 1px solid var(--linea); padding: 24px; margin-bottom: 32px; }
+.entry-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
+.entry-form label { display: block; font-size: 12.5px; color: var(--texto-suave); margin: 12px 0 5px; }
+.entry-form input, .entry-form textarea {
+  width: 100%; padding: 9px 11px; border: 1px solid var(--linea); border-radius: 2px;
+  font-family: 'Inter', sans-serif; font-size: 14px; color: var(--texto); background: var(--crema);
+}
+.entry-form textarea { resize: vertical; min-height: 50px; }
+.entry-form .btn-primary { width: auto; padding: 10px 24px; margin-top: 18px; }
 
-    // Con sesión activa, completar su perfil
-    await supa.from('alumnas').update({
-      nombre,
-      fecha_nacimiento: nacimiento || null,
-      estatura_cm: estatura ? parseFloat(estatura) : null,
-    }).eq('id', data.user.id);
+/* --- Selector de ícono de ánimo (panel admin) --- */
+.animo-picker { display: flex; gap: 8px; margin: 6px 0 4px; }
+.animo-btn {
+  width: 40px; height: 40px; font-size: 19px; background: var(--crema); border: 1px solid var(--linea);
+  border-radius: 50%; cursor: pointer; transition: transform .12s ease, border-color .12s ease;
+}
+.animo-btn:hover { transform: translateY(-1px); }
+.animo-btn.active { border-color: var(--acento); background: var(--acento-suave); transform: scale(1.08); }
 
-    window.location.href = 'portal.html';
-  });
-</script>
+table.progreso .row-actions { white-space: nowrap; }
+table.progreso .del-btn, table.progreso .edit-btn {
+  background: none; border: none; color: var(--texto-suave); cursor: pointer; font-size: 13px;
+}
+table.progreso .edit-btn { color: var(--acento); margin-right: 12px; }
+table.progreso .edit-btn:hover { text-decoration: underline; }
+table.progreso .del-btn:hover { color: #A13A3A; }
+.foto-thumb { color: var(--acento); cursor: pointer; font-size: 13px; text-decoration: underline; }
 
-</body>
-</html>
+/* --- Meta de peso --- */
+.meta-box {
+  background: var(--acento-suave); color: var(--texto); border-left: 3px solid var(--acento);
+  padding: 14px 18px; font-size: 14.5px; margin-bottom: 24px;
+}
+.meta-box strong { font-weight: 600; }
+
+/* --- Gráficos --- */
+.charts-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(260px, 1fr)); gap: 16px; margin-bottom: 28px; }
+.chart-card { background: #fff; border: 1px solid var(--linea); padding: 18px; }
+
+/* --- Tarjetas de comparación Inicio → Ahora --- */
+.stat-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(150px, 1fr)); gap: 14px; margin-bottom: 24px; }
+.stat-card { background: #fff; border: 1px solid var(--linea); padding: 18px 14px; text-align: center; animation: fadeUp .3s ease backwards; }
+.stat-icon { font-size: 19px; margin-bottom: 6px; }
+.stat-label { font-size: 11.5px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.stat-values { font-size: 14px; color: var(--texto-suave); }
+.stat-values strong { font-family: 'Playfair Display', serif; font-size: 18px; font-weight: 600; color: var(--texto); }
+.stat-delta { margin-top: 6px; font-size: 12.5px; color: var(--acento); font-weight: 500; }
+
+/* --- Anillo de avance hacia la meta --- */
+.meta-ring-card {
+  background: #fff; border: 1px solid var(--linea); padding: 26px 24px; text-align: center;
+  max-width: 300px; margin: 0 auto 24px;
+}
+.ring-wrap { position: relative; width: 130px; height: 130px; margin: 0 auto 14px; }
+.ring-center { position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+.ring-pct { font-family: 'Playfair Display', serif; font-size: 25px; font-weight: 600; color: var(--acento); }
+.ring-caption { font-size: 14px; color: var(--texto-suave); }
+.ring-caption strong { color: var(--texto); font-weight: 600; }
+
+/* --- Timeline de progreso --- */
+.timeline { position: relative; padding-left: 22px; }
+.timeline::before {
+  content: ''; position: absolute; left: 5px; top: 6px; bottom: 6px; width: 1px; background: var(--linea);
+}
+.timeline-item { position: relative; margin-bottom: 18px; animation: fadeUp .3s ease backwards; }
+.timeline-dot {
+  position: absolute; left: -22px; top: 18px; width: 11px; height: 11px; border-radius: 50%;
+  background: var(--acento); border: 2px solid #fff; box-shadow: 0 0 0 1px var(--acento);
+}
+.timeline-card { background: #fff; border: 1px solid var(--linea); padding: 16px 18px; }
+.timeline-fecha { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 8px; display: flex; align-items: center; gap: 8px; }
+.animo-icon { font-size: 18px; line-height: 1; }
+.chip-row { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 8px; }
+.chip { display: inline-block; background: var(--crema); border: 1px solid var(--linea); border-radius: 20px; padding: 4px 12px; font-size: 12.5px; color: var(--texto); }
+.timeline-nota { font-size: 14px; color: var(--texto-suave); margin-bottom: 6px; }
+.foto-link { display: inline-block; font-size: 13px; color: var(--acento); cursor: pointer; }
+
+/* --- Lightbox de fotos --- */
+.lightbox {
+  display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.88);
+  align-items: center; justify-content: center; z-index: 100; padding: 32px;
+}
+.lightbox.open { display: flex; }
+.lightbox img { max-width: 90vw; max-height: 85vh; border: 2px solid #fff; }
+.lightbox-close {
+  position: absolute; top: 20px; right: 28px; color: #fff; font-size: 32px; cursor: pointer; line-height: 1;
+}
