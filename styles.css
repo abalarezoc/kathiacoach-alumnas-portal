@@ -28,8 +28,12 @@ nav.top .wrap { display: flex; justify-content: space-between; align-items: cent
 .logout-btn {
   background: none; border: 1px solid var(--linea); color: var(--texto-suave);
   padding: 8px 16px; border-radius: 2px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif;
+  position: relative;
 }
 .logout-btn:hover { border-color: var(--acento); color: var(--acento); }
+
+/* Puntito discreto: avisa que hay alumnas nuevas sin revisar, sin agregar texto ni números */
+.nav-dot { position: absolute; top: 3px; right: 3px; width: 8px; height: 8px; border-radius: 50%; background: #c0392b; }
 
 /* --- Login --- */
 .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
