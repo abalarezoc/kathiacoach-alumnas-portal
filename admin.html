@@ -356,7 +356,7 @@
       }
 
       return `
-        <div class="alumna-card" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
+        <div class="alumna-card ${a.total === 0 ? 'nueva' : ''}" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
           <div class="nombre">${a.nombre || a.email}</div>
           <div class="email">${a.email || ''}</div>
           <div class="badge-row">
