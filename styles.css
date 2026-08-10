@@ -110,6 +110,8 @@ table.progreso tr:last-child td { border-bottom: none; }
   animation: fadeUp .35s ease backwards;
 }
 .alumna-card:hover { transform: translateY(-2px); border-top-color: var(--acento); }
+/* Alumna recién registrada, sin ningún registro todavía: se distingue del resto de un vistazo */
+.alumna-card.nueva { background: var(--acento-suave); border-top-color: var(--acento); }
 .alumna-card .nombre { font-family: 'Playfair Display', serif; font-size: 17px; margin-bottom: 4px; }
 .alumna-card .email { font-size: 12.5px; color: var(--texto-suave); margin-bottom: 14px; }
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 500; }
