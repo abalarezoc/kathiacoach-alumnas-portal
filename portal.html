@@ -69,7 +69,7 @@
     // Su progreso, más reciente primero
     const { data: progreso, error: progresoError } = await supa
       .from('progreso')
-      .select('fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
+      .select('fecha, peso_kg, medidas, notas, foto_path, animo')
       .eq('alumna_id', user.id)
       .order('fecha', { ascending: false });
 
@@ -89,8 +89,6 @@
       progresoHTML = `<div class="timeline">` + progreso.map(p => {
         const chips = [];
         if (p.peso_kg != null) chips.push(`<span class="chip">⚖️ ${p.peso_kg} kg</span>`);
-        if (p.cintura_cm != null) chips.push(`<span class="chip">📏 Cintura ${p.cintura_cm} cm</span>`);
-        if (p.cadera_cm != null) chips.push(`<span class="chip">📏 Cadera ${p.cadera_cm} cm</span>`);
         const nota = p.notas || p.medidas;
         return `
           <div class="timeline-item">
@@ -109,8 +107,6 @@
       const cronologico = [...progreso].reverse();
       const metricas = [
         { id: 'peso-chart', label: 'Peso', unidad: 'kg', key: 'peso_kg', icon: '⚖️' },
-        { id: 'cintura-chart', label: 'Cintura', unidad: 'cm', key: 'cintura_cm', icon: '📏' },
-        { id: 'cadera-chart', label: 'Cadera', unidad: 'cm', key: 'cadera_cm', icon: '📏' },
       ];
       metricas.forEach(m => {
         const serie = cronologico.filter(p => p[m.key] != null);
