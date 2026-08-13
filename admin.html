@@ -85,20 +85,15 @@
     return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  async function init() {
-    const { data: { session } } = await supa.auth.getSession();
-    if (!session) { window.location.href = 'index.html'; return; }
-
-    const { data: miPerfil } = await supa.from('alumnas').select('es_admin').eq('id', session.user.id).single();
-    if (!miPerfil || !miPerfil.es_admin) {
-      window.location.href = 'portal.html';
-      return;
-    }
-
+  // Carga (o recarga) la lista de alumnas y su resumen de progreso.
+  // Separado de init() para poder llamarlo de nuevo cuando la pestaña
+  // vuelve a tener foco, sin repetir la verificación de sesión/admin.
+  async function cargarAlumnas() {
     const { data: alumnas, error } = await supa
       .from('alumnas')
       .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm')
       .eq('es_admin', false)
+      .eq('activa', true)
       .order('nombre', { ascending: true });
 
     if (error) {
@@ -139,9 +134,36 @@
       dot.textContent = numNuevas;
       dot.style.display = numNuevas > 0 ? 'flex' : 'none';
     }
+  }
 
+  async function init() {
+    const { data: { session } } = await supa.auth.getSession();
+    if (!session) { window.location.href = 'index.html'; return; }
+
+    const { data: miPerfil } = await supa.from('alumnas').select('es_admin').eq('id', session.user.id).single();
+    if (!miPerfil || !miPerfil.es_admin) {
+      window.location.href = 'portal.html';
+      return;
+    }
+
+    await cargarAlumnas();
     renderAgenda();
     cargarCitas();
+
+    // Si Kathia deja el panel abierto y vuelve más tarde (por ejemplo tras
+    // salir a WhatsApp), esto refresca solo la lista/indicadores sin que
+    // ella tenga que recargar la página a mano.
+    let refrescando = false;
+    async function alVolverFoco() {
+      if (refrescando || document.hidden) return;
+      refrescando = true;
+      await cargarAlumnas();
+      if (vistaActual === 'grid') renderGrid();
+      else if (vistaActual === 'agenda') renderAgenda();
+      refrescando = false;
+    }
+    window.addEventListener('focus', alVolverFoco);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) alVolverFoco(); });
   }
 
   function badgeFor(a) {
@@ -380,8 +402,44 @@
       <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
       ${cumplePanelHTML}
       <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
+      <p style="margin-top:24px;"><span class="back-link" onclick="renderArchivadas()">Ver alumnas archivadas →</span></p>
     `;
   }
+
+  window.renderArchivadas = async function() {
+    vistaActual = 'archivadas';
+    contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
+
+    const { data: archivadas } = await supa
+      .from('alumnas')
+      .select('id, nombre, email')
+      .eq('es_admin', false)
+      .eq('activa', false)
+      .order('nombre', { ascending: true });
+
+    const filas = (archivadas || []).map(a => `
+      <div class="agenda-item">
+        <span class="agenda-alumna">${a.nombre || a.email}</span>
+        <span class="back-link" onclick="reactivarAlumna('${a.id}')">Reactivar</span>
+      </div>
+    `).join('');
+
+    contentEl.innerHTML = `
+      <div class="detail-header">
+        <h1 class="greeting">Alumnas archivadas</h1>
+        <span class="back-link" onclick="renderGrid()">← Volver</span>
+      </div>
+      <p class="greeting-sub">Su historial de progreso sigue guardado — reactívalas para que vuelvan a aparecer en Indicadores.</p>
+      <div class="agenda-panel">${filas || '<div class="empty-state">No hay alumnas archivadas.</div>'}</div>
+    `;
+  };
+
+  window.reactivarAlumna = async function(id) {
+    const { error } = await supa.from('alumnas').update({ activa: true }).eq('id', id);
+    if (error) { alert('No se pudo reactivar: ' + error.message); return; }
+    await cargarAlumnas();
+    renderArchivadas();
+  };
 
   async function fotoUrl(path) {
     if (!path) return null;
@@ -429,7 +487,10 @@
           <h1 class="greeting">${a.nombre || a.email}</h1>
           <p class="greeting-sub" style="margin-bottom:0;">${a.email}</p>
         </div>
-        <span class="back-link" onclick="volverDesdeDetalle()">← Volver</span>
+        <div style="display:flex; gap:16px; align-items:center;">
+          <span class="back-link" onclick="archivarAlumna('${id}')">Archivar alumna</span>
+          <span class="back-link" onclick="volverDesdeDetalle()">← Volver</span>
+        </div>
       </div>
 
       ${(() => {
@@ -641,6 +702,15 @@
         abrirAlumna(id);
       }
     });
+  };
+
+  window.archivarAlumna = async function(id) {
+    const a = alumnasCache.find(x => x.id === id);
+    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Indicadores, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
+    const { error } = await supa.from('alumnas').update({ activa: false }).eq('id', id);
+    if (error) { alert('No se pudo archivar: ' + error.message); return; }
+    await cargarAlumnas();
+    renderGrid();
   };
 
   window.borrarRegistro = async function(regId, alumnaId) {
