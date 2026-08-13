@@ -9,3 +9,9 @@
 [build]
   publish = "."
   functions = "netlify/functions"
+
+# Corre sola todos los días para que a ninguna alumna con horario fijo
+# se le acabe el calendario sin avisar (le va agregando semanas nuevas
+# antes de que le queden menos de 4 clases por delante).
+[functions."renovar-horarios-fijos"]
+  schedule = "@daily"
