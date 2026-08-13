@@ -33,6 +33,23 @@
   </div>
 </main>
 
+<div class="modal-overlay" id="modal-eliminar">
+  <div class="modal-card">
+    <h3 id="modal-eliminar-titulo">¿Eliminar a esta alumna?</h3>
+    <div class="modal-warn">
+      <strong>Esta acción no se puede deshacer.</strong> Se borra para siempre todo su historial — pesos, notas y fotos — y su ficha completa desaparece de tu panel.
+    </div>
+    <div class="modal-alt">
+      ¿Solo quieres que deje de aparecer en tus Indicadores? Archívala en su lugar: no se pierde nada, y puedes reactivarla cuando quieras.
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-safe" id="modal-btn-archivar">Archivar en su lugar</button>
+      <button type="button" class="btn-danger" id="modal-btn-eliminar">Eliminar definitivamente</button>
+      <button type="button" class="btn-cancel" id="modal-btn-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const contentEl = document.getElementById('content');
@@ -489,6 +506,7 @@
         </div>
         <div style="display:flex; gap:16px; align-items:center;">
           <span class="back-link" onclick="archivarAlumna('${id}')">Archivar alumna</span>
+          <span class="back-link back-link-danger" onclick="abrirModalEliminar('${id}')">Eliminar alumna</span>
           <span class="back-link" onclick="volverDesdeDetalle()">← Volver</span>
         </div>
       </div>
@@ -704,14 +722,82 @@
     });
   };
 
-  window.archivarAlumna = async function(id) {
-    const a = alumnasCache.find(x => x.id === id);
-    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Indicadores, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
+  // Hace el archivado en sí, sin preguntar — se usa tanto desde el enlace directo
+  // "Archivar alumna" (que sí pregunta antes) como desde el modal de eliminar
+  // (donde la pregunta ya se hizo dentro del propio modal).
+  async function archivarAlumnaDirecto(id) {
     const { error } = await supa.from('alumnas').update({ activa: false }).eq('id', id);
     if (error) { alert('No se pudo archivar: ' + error.message); return; }
     await cargarAlumnas();
     renderGrid();
+  }
+
+  window.archivarAlumna = async function(id) {
+    const a = alumnasCache.find(x => x.id === id);
+    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Indicadores, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
+    await archivarAlumnaDirecto(id);
   };
+
+  // Borra para siempre a una alumna: sus fotos, todo su historial de progreso,
+  // y su ficha. No hay vuelta atrás — por eso solo se llama después de pasar
+  // por el modal de aviso y una última confirmación.
+  async function eliminarAlumnaDefinitivo(id) {
+    try {
+      const { data: archivos } = await supa.storage.from('progreso-fotos').list(id);
+      if (archivos && archivos.length) {
+        const rutas = archivos.map(f => `${id}/${f.name}`);
+        await supa.storage.from('progreso-fotos').remove(rutas);
+      }
+    } catch (e) {
+      // Si no se pudieron borrar las fotos, seguimos igual — no es crítico.
+    }
+
+    const { error: errProgreso } = await supa.from('progreso').delete().eq('alumna_id', id);
+    if (errProgreso) { alert('No se pudo eliminar su historial: ' + errProgreso.message); return; }
+
+    const { error: errAlumna } = await supa.from('alumnas').delete().eq('id', id);
+    if (errAlumna) { alert('No se pudo eliminar a la alumna: ' + errAlumna.message); return; }
+
+    await cargarAlumnas();
+    renderGrid();
+  }
+
+  // --- Modal de "¿Archivar o eliminar?" ---
+  let alumnaParaEliminar = null;
+
+  window.abrirModalEliminar = function(id) {
+    const a = alumnasCache.find(x => x.id === id);
+    alumnaParaEliminar = id;
+    document.getElementById('modal-eliminar-titulo').textContent =
+      `¿Eliminar a ${a ? (a.nombre || a.email) : 'esta alumna'}?`;
+    document.getElementById('modal-eliminar').classList.add('open');
+  };
+
+  function cerrarModalEliminar() {
+    document.getElementById('modal-eliminar').classList.remove('open');
+    alumnaParaEliminar = null;
+  }
+
+  document.getElementById('modal-btn-cancelar').addEventListener('click', cerrarModalEliminar);
+  document.getElementById('modal-eliminar').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-eliminar') cerrarModalEliminar();
+  });
+
+  document.getElementById('modal-btn-archivar').addEventListener('click', async () => {
+    const id = alumnaParaEliminar;
+    cerrarModalEliminar();
+    if (id) await archivarAlumnaDirecto(id);
+  });
+
+  document.getElementById('modal-btn-eliminar').addEventListener('click', async () => {
+    const id = alumnaParaEliminar;
+    if (!id) return;
+    const a = alumnasCache.find(x => x.id === id);
+    const nombre = a ? (a.nombre || a.email) : 'esta alumna';
+    cerrarModalEliminar();
+    if (!confirm(`Última confirmación: se va a borrar para siempre a ${nombre} y todo su historial. Esto no se puede deshacer. ¿Continuar?`)) return;
+    await eliminarAlumnaDefinitivo(id);
+  });
 
   window.borrarRegistro = async function(regId, alumnaId) {
     if (!confirm('¿Borrar este registro?')) return;
