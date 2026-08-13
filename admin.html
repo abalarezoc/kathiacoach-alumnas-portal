@@ -37,7 +37,7 @@
   <div class="modal-card">
     <h3 id="modal-eliminar-titulo">¿Eliminar a esta alumna?</h3>
     <div class="modal-warn">
-      <strong>Esta acción no se puede deshacer.</strong> Se borra para siempre todo su historial — pesos, notas y fotos — y su ficha completa desaparece de tu panel.
+      <strong>Esta acción no se puede deshacer.</strong> Se borra para siempre todo su historial — pesos, notas y fotos — su ficha completa desaparece de tu panel, y su correo queda libre por si alguien quiere volver a registrarse con él.
     </div>
     <div class="modal-alt">
       ¿Solo quieres que deje de aparecer en tus Alumnas? Archívala en su lugar: no se pierde nada, y puedes reactivarla cuando quieras.
@@ -224,6 +224,107 @@
   function fmtDiaMes(fechaNac) {
     const nac = new Date(fechaNac + 'T00:00:00');
     return nac.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
+  }
+
+  const NOMBRES_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  function nombreDia(n) { return NOMBRES_DIA[n] || '—'; }
+  function fmtHora12(horaStr) {
+    if (!horaStr) return '—';
+    const [hh, mm] = horaStr.split(':').map(Number);
+    const ampm = hh < 12 ? 'a.m.' : 'p.m.';
+    const h12 = hh % 12 === 0 ? 12 : hh % 12;
+    return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
+  }
+
+  // Conecta los botones "Reagendar" y "Cancelar" del horario fijo de una
+  // alumna, desde el panel de Kathia. A diferencia del portal de la
+  // alumna, aquí no hay límite de anticipación ni aviso de cobro — es
+  // Kathia manejando su propia agenda.
+  function wireHorarioFijoBotonesAdmin(cita, alumnaId) {
+    const btnReagendar = document.getElementById('hf-admin-reagendar');
+    const btnCancelar = document.getElementById('hf-admin-cancelar');
+    const area = document.getElementById('hf-admin-reagendar-area');
+
+    if (btnReagendar) {
+      btnReagendar.addEventListener('click', async () => {
+        area.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
+        try {
+          const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=14');
+          const data = await resp.json();
+          if (!data.ok) {
+            area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
+            return;
+          }
+          const dias = Object.keys(data.slots || {}).sort();
+          if (!dias.length) {
+            area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora.</div>`;
+            return;
+          }
+          area.innerHTML = dias.map(dia => {
+            const fechaObj = new Date(dia + 'T00:00:00');
+            const diaTitulo = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+            const slots = data.slots[dia] || [];
+            return `
+              <div class="agenda-dia">
+                <div class="agenda-dia-titulo">${diaTitulo}</div>
+                ${slots.map(s => {
+                  const horaTxt = new Date(s.time).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.time}">${horaTxt} →</button></div>`;
+                }).join('')}
+              </div>
+            `;
+          }).join('');
+          area.querySelectorAll('button[data-time]').forEach(b => {
+            b.addEventListener('click', async () => {
+              b.disabled = true;
+              const original = b.textContent;
+              b.textContent = 'Reagendando...';
+              try {
+                const { data: { session } } = await supa.auth.getSession();
+                const resp2 = await fetch('/.netlify/functions/admin-reagendar-cita', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ citaId: cita.id, nuevoInicioUTC: b.dataset.time }),
+                });
+                const resultado = await resp2.json();
+                if (!resultado.ok) {
+                  alert('No se pudo reagendar: ' + resultado.mensaje);
+                  b.disabled = false;
+                  b.textContent = original;
+                  return;
+                }
+                window.abrirAlumna(alumnaId);
+              } catch (err) {
+                alert('No se pudo reagendar: ' + err.message);
+                b.disabled = false;
+                b.textContent = original;
+              }
+            });
+          });
+        } catch (err) {
+          area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios.</div>`;
+        }
+      });
+    }
+
+    if (btnCancelar) {
+      btnCancelar.addEventListener('click', async () => {
+        if (!confirm('¿Cancelar esta clase? No se aplican restricciones ni cargos automáticos — es tu decisión.')) return;
+        try {
+          const { data: { session } } = await supa.auth.getSession();
+          const resp = await fetch('/.netlify/functions/admin-cancelar-cita', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ citaId: cita.id }),
+          });
+          const resultado = await resp.json();
+          if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
+          window.abrirAlumna(alumnaId);
+        } catch (err) {
+          alert('No se pudo cancelar: ' + err.message);
+        }
+      });
+    }
   }
 
   // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de referencia OMS —
@@ -488,6 +589,28 @@
     editingId = null;
     animoSeleccionado = null;
 
+    // Horario fijo (si ya tiene uno asignado) y su próxima clase.
+    const { data: horarios } = await supa
+      .from('horario_fijo')
+      .select('id, dia_semana, hora, proxima_confirmacion')
+      .eq('alumna_id', id)
+      .eq('activo', true)
+      .order('creado_en', { ascending: false })
+      .limit(1);
+    const horarioActual = (horarios && horarios[0]) || null;
+    let proximaCita = null;
+    if (horarioActual) {
+      const { data: citas } = await supa
+        .from('citas_fijas')
+        .select('id, fecha, hora')
+        .eq('horario_fijo_id', horarioActual.id)
+        .eq('estado', 'programada')
+        .gte('fecha', new Date().toISOString().slice(0, 10))
+        .order('fecha', { ascending: true })
+        .limit(1);
+      proximaCita = (citas && citas[0]) || null;
+    }
+
     const filas = (progreso || []).map(p => `
       <tr>
         <td>${fmtFecha(p.fecha)}</td>
@@ -548,6 +671,30 @@
         </form>
       </div>`;
       })()}
+
+      <div class="entry-form" style="margin-bottom:20px;">
+        <h3 style="margin-bottom:8px;">Horario fijo de clases</h3>
+        ${horarioActual ? `
+          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+            <div>
+              <strong style="color:var(--texto);">${nombreDia(horarioActual.dia_semana)} a las ${fmtHora12(horarioActual.hora)}</strong>
+              <div class="card-meta" style="margin-top:4px;">${proximaCita ? `Próxima clase: ${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}` : 'No hay próximas clases programadas (revisa Cal.com).'}</div>
+              ${horarioActual.proxima_confirmacion ? `<div class="card-meta" style="margin-top:2px;">Próximo recordatorio para ella: ${fmtFecha(horarioActual.proxima_confirmacion)}</div>` : ''}
+            </div>
+            <span class="back-link back-link-danger" id="quitar-horario-btn">Quitar horario fijo</span>
+          </div>
+          ${proximaCita ? `
+            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px;">
+              <button class="btn-primary" type="button" id="hf-admin-reagendar">Reagendar</button>
+              <button class="btn-danger" type="button" id="hf-admin-cancelar">Cancelar esta clase</button>
+            </div>
+            <p class="input-hint" style="margin-top:10px;">Como administradora, puedes reagendar o cancelar sin restricciones — el aviso de cobro por cancelar el mismo día solo aplica cuando lo hace la alumna.</p>
+            <div id="hf-admin-reagendar-area" style="margin-top:14px;"></div>
+          ` : ''}
+        ` : `
+          <p class="greeting-sub" style="margin:0;">Esta alumna todavía no eligió su horario fijo. Ella lo hace desde su propio portal, escogiendo uno de los horarios que tienes libres — en cuanto lo elija, aparecerá aquí.</p>
+        `}
+      </div>
 
       <div class="entry-form">
         <h3 id="entry-form-title" style="margin-bottom:4px;">Agregar registro</h3>
@@ -616,6 +763,30 @@
       a.estatura_cm = estatura ? parseFloat(estatura) : null;
       window.abrirAlumna(id);
     });
+
+    if (horarioActual && proximaCita) {
+      wireHorarioFijoBotonesAdmin(proximaCita, id);
+    }
+
+    const quitarHorarioBtn = document.getElementById('quitar-horario-btn');
+    if (quitarHorarioBtn) {
+      quitarHorarioBtn.addEventListener('click', async () => {
+        if (!confirm('¿Quitar el horario fijo? Se cancelan sus próximas clases automáticas en Cal.com y vuelve a agendar libremente en el calendario abierto.')) return;
+        try {
+          const { data: { session } } = await supa.auth.getSession();
+          const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ horarioFijoId: horarioActual.id }),
+          });
+          const resultado = await resp.json();
+          if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
+          window.abrirAlumna(id);
+        } catch (err) {
+          alert('No se pudo quitar: ' + err.message);
+        }
+      });
+    }
 
     document.querySelectorAll('.animo-btn').forEach(btn => {
       btn.addEventListener('click', () => {
@@ -761,6 +932,26 @@
 
     const { error: errAlumna } = await supa.from('alumnas').delete().eq('id', id);
     if (errAlumna) { alert('No se pudo eliminar a la alumna: ' + errAlumna.message); return; }
+
+    // También borra su acceso de inicio de sesión (esto vive en un sistema
+    // aparte al que solo se puede llegar desde el servidor). Sin este paso,
+    // su correo quedaría "atrapado" y no podría volver a registrarse con él.
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if (session) {
+        const resp = await fetch('/.netlify/functions/eliminar-cuenta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ id }),
+        });
+        const resultado = await resp.json();
+        if (!resultado.ok) {
+          console.warn('No se pudo liberar su correo para volver a registrarse:', resultado.mensaje);
+        }
+      }
+    } catch (e) {
+      // Su ficha y su historial ya se borraron igual — esto no bloquea nada.
+    }
 
     await cargarAlumnas();
     renderGrid();
