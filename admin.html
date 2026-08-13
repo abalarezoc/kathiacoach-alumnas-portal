@@ -296,8 +296,9 @@
         <label>Nombre de la alumna</label>
         <input type="text" id="inv-nombre" placeholder="Ej. María González">
 
-        <label>Su WhatsApp (sin +51, solo los 9 dígitos)</label>
-        <input type="text" id="inv-whatsapp" placeholder="Ej. 987654321">
+        <label>Su WhatsApp</label>
+        <input type="text" id="inv-whatsapp" placeholder="Perú: 987654321 · Otro país: código de país + número, ej. 14155552671">
+        <p class="input-hint">Si es de Perú, escribe solo los 9 dígitos (se le agrega el +51 solo). Si es de otro país, escribe el número completo con su código de país, sin el símbolo +.</p>
 
         <label>Mensaje (puedes editarlo antes de enviar)</label>
         <textarea id="inv-mensaje" style="min-height:170px;"></textarea>
@@ -324,6 +325,9 @@
 
     function actualizarLinkEnvio() {
       let numero = whatsappEl.value.replace(/[^\d]/g, '');
+      // 9 dígitos = número peruano sin código de país (se le agrega el +51 solo).
+      // Cualquier otra cantidad de dígitos se usa tal cual, asumiendo que ya
+      // incluye el código de país (para alumnas fuera de Perú).
       if (numero.length === 9) numero = '51' + numero;
       const texto = encodeURIComponent(mensajeEl.value);
       if (numero) {
