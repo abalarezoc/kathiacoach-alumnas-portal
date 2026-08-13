@@ -19,7 +19,7 @@
     <div style="display:flex; gap:10px; align-items:center;">
       <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
       <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
-      <button class="logout-btn" onclick="renderGrid()">📊 Indicadores<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
+      <button class="logout-btn" onclick="renderGrid()">📊 Alumnas<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
       <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
       <button class="logout-btn" onclick="renderArchivadas()" title="Alumnas archivadas" style="margin-left:6px;">🗄️</button>
@@ -40,7 +40,7 @@
       <strong>Esta acción no se puede deshacer.</strong> Se borra para siempre todo su historial — pesos, notas y fotos — y su ficha completa desaparece de tu panel.
     </div>
     <div class="modal-alt">
-      ¿Solo quieres que deje de aparecer en tus Indicadores? Archívala en su lugar: no se pierde nada, y puedes reactivarla cuando quieras.
+      ¿Solo quieres que deje de aparecer en tus Alumnas? Archívala en su lugar: no se pierde nada, y puedes reactivarla cuando quieras.
     </div>
     <div class="modal-actions">
       <button type="button" class="btn-safe" id="modal-btn-archivar">Archivar en su lugar</button>
@@ -145,7 +145,7 @@
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
     }));
 
-    // Puntito con número en "Indicadores" si hay alumnas sin ningún registro todavía
+    // Puntito con número en "Alumnas" si hay alumnas sin ningún registro todavía
     const numNuevas = alumnasCache.filter(a => a.total === 0).length;
     const dot = document.getElementById('nuevas-dot');
     if (dot) {
@@ -416,7 +416,7 @@
     ` : '';
 
     contentEl.innerHTML = `
-      <h1 class="greeting">Indicadores</h1>
+      <h1 class="greeting">Alumnas</h1>
       <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
       ${cumplePanelHTML}
       <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
@@ -446,7 +446,7 @@
         <h1 class="greeting">Alumnas archivadas</h1>
         <span class="back-link" onclick="renderGrid()">← Volver</span>
       </div>
-      <p class="greeting-sub">Su historial de progreso sigue guardado — reactívalas para que vuelvan a aparecer en Indicadores.</p>
+      <p class="greeting-sub">Su historial de progreso sigue guardado — reactívalas para que vuelvan a aparecer en Alumnas.</p>
       <div class="agenda-panel">${filas || '<div class="empty-state">No hay alumnas archivadas.</div>'}</div>
     `;
   };
@@ -734,7 +734,7 @@
 
   window.archivarAlumna = async function(id) {
     const a = alumnasCache.find(x => x.id === id);
-    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Indicadores, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
+    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Alumnas, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
     await archivarAlumnaDirecto(id);
   };
 
