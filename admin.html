@@ -22,6 +22,7 @@
       <button class="logout-btn" onclick="renderGrid()">📊 Indicadores<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
       <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
+      <button class="logout-btn" onclick="renderArchivadas()" title="Alumnas archivadas" style="margin-left:6px;">🗄️</button>
     </div>
   </div>
 </nav>
@@ -402,7 +403,6 @@
       <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
       ${cumplePanelHTML}
       <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
-      <p style="margin-top:24px;"><span class="back-link" onclick="renderArchivadas()">Ver alumnas archivadas →</span></p>
     `;
   }
 
