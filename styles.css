@@ -161,6 +161,40 @@ table.progreso tr:last-child td { border-bottom: none; }
 .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .back-link { font-size: 13.5px; color: var(--texto-suave); cursor: pointer; }
 .back-link:hover { color: var(--acento); }
+.back-link-danger { color: #A13A3A; }
+.back-link-danger:hover { color: #C0392B; }
+
+/* --- Modal de confirmación: eliminar o archivar alumna --- */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.55);
+  align-items: center; justify-content: center; z-index: 200; padding: 24px;
+}
+.modal-overlay.open { display: flex; }
+.modal-card {
+  background: #fff; border-top: 3px solid #C0392B; max-width: 440px; width: 100%;
+  padding: 28px 26px; animation: fadeUp .2s ease backwards;
+}
+.modal-card h3 { font-size: 18px; margin-bottom: 16px; }
+.modal-warn {
+  background: #FBEAE8; border-left: 3px solid #C0392B; color: var(--texto);
+  padding: 12px 16px; font-size: 13.5px; margin-bottom: 12px; line-height: 1.55;
+}
+.modal-warn strong { color: #A13A3A; }
+.modal-alt {
+  background: var(--acento-suave); border-left: 3px solid var(--acento); color: var(--texto);
+  padding: 12px 16px; font-size: 13.5px; margin-bottom: 22px; line-height: 1.55;
+}
+.modal-actions { display: flex; flex-direction: column; gap: 10px; }
+.btn-danger, .btn-safe, .btn-cancel {
+  padding: 11px; border-radius: 2px; font-family: 'Inter', sans-serif; font-weight: 500;
+  font-size: 14px; cursor: pointer; border: none;
+}
+.btn-danger { background: #C0392B; color: #fff; }
+.btn-danger:hover { opacity: .9; }
+.btn-safe { background: var(--acento); color: #fff; }
+.btn-safe:hover { opacity: .9; }
+.btn-cancel { background: none; color: var(--texto-suave); border: 1px solid var(--linea); font-weight: 400; }
+.btn-cancel:hover { border-color: var(--texto-suave); }
 
 .entry-form { background: #fff; border: 1px solid var(--linea); padding: 24px; margin-bottom: 32px; }
 .entry-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
