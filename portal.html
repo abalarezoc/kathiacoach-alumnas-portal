@@ -153,12 +153,39 @@
     render();
   }
 
-  // Conecta los botones "Reagendar" y "Cancelar por emergencia" que se
-  // muestran cuando la alumna ya tiene un horario fijo asignado.
-  function wireHorarioFijoBotones(cita) {
+  // Conecta los botones "Reagendar" y "Cancelar por emergencia" (de la
+  // próxima clase) y "Cancelar todo mi horario fijo" (de la serie
+  // completa) que se muestran cuando la alumna ya tiene un horario fijo.
+  function wireHorarioFijoBotones(cita, horarioFijoId) {
     const btnReagendar = document.getElementById('btn-reagendar');
     const btnCancelar = document.getElementById('btn-cancelar-emergencia');
+    const btnCancelarSerie = document.getElementById('btn-cancelar-serie');
     const area = document.getElementById('reagendar-area');
+
+    if (btnCancelarSerie) {
+      btnCancelarSerie.addEventListener('click', async () => {
+        const aviso = '¿Seguro que quieres cancelar tu horario fijo de cada semana?\n\nSe cancelan todas tus próximas clases automáticas y dejas de tener un horario reservado. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.';
+        if (!confirm(aviso)) return;
+        const areaSerie = document.getElementById('cancelar-serie-area');
+        areaSerie.innerHTML = `<div class="loading">Cancelando tu horario fijo...</div>`;
+        try {
+          const { data: { session } } = await supa.auth.getSession();
+          const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ horarioFijoId }),
+          });
+          const resultado = await resp.json();
+          if (!resultado.ok) {
+            areaSerie.innerHTML = `<div class="empty-state">No se pudo cancelar: ${resultado.mensaje}</div>`;
+            return;
+          }
+          init();
+        } catch (err) {
+          areaSerie.innerHTML = `<div class="empty-state">No se pudo cancelar: ${err.message}</div>`;
+        }
+      });
+    }
 
     function horasFaltantes() {
       const inicio = new Date(`${cita.fecha}T${cita.hora}:00.000-05:00`);
@@ -559,7 +586,7 @@
           ` : ''}
           ${proximaCita ? `
             <div class="agenda-item" style="margin-bottom:16px;">
-              <span class="agenda-alumna">🗓️ <strong>Próxima clase:</strong> ${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}</span>
+              <span class="agenda-alumna">🗓️ <strong>Tu próxima cita es:</strong> ${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}</span>
             </div>
             <div style="display:flex; gap:12px; flex-wrap:wrap;">
               <button class="btn-primary" type="button" id="btn-reagendar" title="Mover tu próxima clase a otro horario libre (hasta 1 día antes)">↻ Reagendar</button>
@@ -568,6 +595,10 @@
             <p class="input-hint" style="margin-top:10px;">Puedes reagendar hasta 1 día antes de tu clase. Las cancelaciones de emergencia se aceptan siempre, pero si cancelas el mismo día, la sesión se cobra igual.</p>
             <div id="reagendar-area" style="margin-top:14px;"></div>
           ` : `<div class="empty-state">No tienes próximas clases programadas. Escríbele a Kathia si crees que falta agendar algo.</div>`}
+          <div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--linea);">
+            <span class="back-link back-link-danger" id="btn-cancelar-serie" title="Deja de tener clase fija cada semana — se cancelan todas tus próximas clases automáticas">🛑 Cancelar todo mi horario fijo (todas las semanas)</span>
+            <div id="cancelar-serie-area" style="margin-top:12px;"></div>
+          </div>
         ` : `
           <h3>📅 Elige tu horario fijo semanal</h3>
           <p class="panel-sub">Elige uno de los horarios que Kathia tiene libres — quedará como tu clase fija de cada semana, sin que tengas que volver a agendar. Más adelante podrás reagendar o cancelar cada sesión si lo necesitas.</p>
@@ -593,7 +624,7 @@
     tabHorario.addEventListener('click', () => activarTabPortal('horario'));
 
     if (horarioFijo) {
-      wireHorarioFijoBotones(proximaCita);
+      wireHorarioFijoBotones(proximaCita, horarioFijo.id);
       if (mostrarRecordatorio) wireRecordatorioHorario(horarioFijo.id);
     } else {
       cargarSelectorHorarios('elegir-horario-area');
