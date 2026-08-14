@@ -25,6 +25,11 @@ const {
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 
+// Cada horario fijo activo es una clase más por semana (uno por día,
+// por la regla de abajo) — así que el máximo de horarios fijos activos
+// ES el máximo de clases fijas por semana.
+const MAX_HORARIOS_FIJOS_POR_ALUMNA = 3;
+
 // Netlify corta las funciones normales a los 10 segundos. Crear muchas
 // clases en Cal.com una por una (esperando cada respuesta) tarda más que
 // eso, y el navegador recibe una página de error en vez de una respuesta
@@ -145,6 +150,22 @@ exports.handler = async function (event) {
       const choca = Array.isArray(dupData) && dupData.some(h => h.id !== viejoIdExcluir);
       if (choca) {
         return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Ya tienes un horario fijo ese día. Solo puedes tener una clase fija por día — cancela o cambia la que ya tienes antes de agregar otra ese mismo día.' }) };
+      }
+    }
+
+    // Máximo 3 clases fijas por semana. Si es un reemplazo, no cuenta el
+    // horario que se va a dar de baja (se está cambiando, no sumando).
+    {
+      const totalResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/horario_fijo?alumna_id=eq.${alumnaId}&activo=eq.true&select=id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const totalData = await totalResp.json();
+      const totalActivos = Array.isArray(totalData)
+        ? totalData.filter(h => h.id !== viejoIdExcluir).length
+        : 0;
+      if (totalActivos >= MAX_HORARIOS_FIJOS_POR_ALUMNA) {
+        return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: `Ya tienes ${MAX_HORARIOS_FIJOS_POR_ALUMNA} clases fijas por semana, que es el máximo permitido. Cancela una para poder agregar otra.` }) };
       }
     }
 
