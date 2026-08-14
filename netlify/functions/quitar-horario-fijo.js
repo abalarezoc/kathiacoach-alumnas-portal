@@ -1,10 +1,12 @@
 // ============================================================
-// Función serverless: quita el horario fijo de una alumna.
+// Función serverless: quita (desactiva) un horario fijo por completo —
+// no una clase suelta, sino toda la serie semanal.
 //
-// Solo la llama Kathia desde su panel. Cancela en Cal.com todas
-// las clases futuras todavía "programada" de esa regla, y marca
-// el horario como inactivo (no se borra nada — el historial de
-// clases pasadas queda intacto).
+// La puede llamar la propia alumna dueña de ese horario (para dejar de
+// tener clase fija de cada semana), o Kathia desde su panel para
+// cualquier alumna. Cancela en Cal.com todas las clases futuras
+// todavía "programada" de esa regla, y marca el horario como inactivo
+// (no se borra nada — el historial de clases pasadas queda intacto).
 //
 // Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
 // ============================================================
@@ -40,7 +42,7 @@ exports.handler = async function (event) {
   }
 
   try {
-    // 1. Confirma que quien llama es administradora.
+    // 1. Confirma quién llama.
     const userResp = await fetch(`${SUPABASE_URL}/auth/v1/user`, {
       headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${token}` },
     });
@@ -54,8 +56,18 @@ exports.handler = async function (event) {
     );
     const perfilData = await perfilResp.json();
     const esAdmin = Array.isArray(perfilData) && perfilData[0] && perfilData[0].es_admin;
+
+    // 1b. Si no es admin, solo puede quitar SU PROPIO horario.
     if (!esAdmin) {
-      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Solo una cuenta administradora puede hacer esto.' }) };
+      const horarioResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/horario_fijo?id=eq.${horarioFijoId}&select=alumna_id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const horarioData = await horarioResp.json();
+      const horario = Array.isArray(horarioData) && horarioData[0];
+      if (!horario || horario.alumna_id !== userData.id) {
+        return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Ese horario no es tuyo.' }) };
+      }
     }
 
     // 2. Busca las citas futuras aún programadas de ese horario.
@@ -71,7 +83,7 @@ exports.handler = async function (event) {
         await fetch(`https://api.cal.com/v2/bookings/${cita.calcom_booking_uid}/cancel`, {
           method: 'POST',
           headers: calcomHeaders(CALCOM_API_KEY),
-          body: JSON.stringify({ cancellationReason: 'Se quitó el horario fijo desde el panel.' }),
+          body: JSON.stringify({ cancellationReason: 'Se canceló el horario fijo de cada semana.' }),
         });
       } catch (e) { /* seguimos con las demás */ }
     }
