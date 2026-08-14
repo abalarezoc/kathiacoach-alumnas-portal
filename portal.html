@@ -36,8 +36,12 @@
   const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const contentEl = document.getElementById('content');
 
-  function fmtFecha(iso) {
+  function fmtFecha(iso, opciones) {
     const d = new Date(iso + 'T00:00:00');
+    if (opciones && opciones.conDia) {
+      const texto = d.toLocaleDateString('es-PE', { weekday: 'long', day: 'numeric', month: 'long', year: 'numeric' });
+      return texto.charAt(0).toUpperCase() + texto.slice(1);
+    }
     return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
@@ -199,48 +203,17 @@
     }
 
     if (btnReagendar) {
-      btnReagendar.addEventListener('click', async () => {
+      // "Reagendar" cambia el horario fijo de esta alumna de forma
+      // permanente (no solo la próxima clase) — usa el mismo mecanismo
+      // que "Cambiar horario": crea el horario nuevo, cancela el viejo y
+      // sus citas futuras, así el resumen semanal queda consistente con
+      // la próxima cita.
+      btnReagendar.addEventListener('click', () => {
         if (horasFaltantes() < 24) {
           area.innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu clase. Escríbele a Kathia por WhatsApp.</div>`;
           return;
         }
-        area.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
-        try {
-          const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=30');
-          const data = await resp.json();
-          if (!data.ok) {
-            area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
-            return;
-          }
-          construirCalendarioHorarios(area, data.slots || {}, async (b, isoTime) => {
-            b.disabled = true;
-            const original = b.textContent;
-            b.textContent = 'Reagendando...';
-            try {
-              const { data: { session } } = await supa.auth.getSession();
-              const resp2 = await fetch('/.netlify/functions/reagendar-cita', {
-                method: 'POST',
-                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-                body: JSON.stringify({ citaId: cita.id, nuevoInicioUTC: isoTime }),
-              });
-              const resultado = await resp2.json();
-              if (!resultado.ok) {
-                alert('No se pudo reagendar: ' + resultado.mensaje);
-                b.disabled = false;
-                b.textContent = original;
-                return;
-              }
-              alert('Listo, tu clase quedó reagendada.');
-              init();
-            } catch (err) {
-              alert('No se pudo reagendar: ' + err.message);
-              b.disabled = false;
-              b.textContent = original;
-            }
-          });
-        } catch (err) {
-          area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios.</div>`;
-        }
+        cargarSelectorHorarios(`reagendar-area-${h.id}`, { reemplazar: true, horarioFijoId: h.id });
       });
     }
 
@@ -599,7 +572,7 @@
           <div class="resumen-icon">🗓️</div>
           <div class="resumen-label">Próxima clase</div>
           <div class="resumen-valor">${proximaCitaGeneral
-            ? `${fmtFecha(proximaCitaGeneral.fecha)}<br>${fmtHora12(proximaCitaGeneral.hora)}`
+            ? `${fmtFecha(proximaCitaGeneral.fecha, { conDia: true })}<br>${fmtHora12(proximaCitaGeneral.hora)}`
             : 'Aún no tienes una clase fija agendada'}</div>
         </div>
         <div class="resumen-card" id="resumen-peso" role="button" tabindex="0" title="Ver tu progreso completo">
@@ -653,7 +626,7 @@
               `;
             }).join('')}
           </div>
-          ${proximaCitaGeneral ? `<div class="semana-proxima">🗓️ <strong>Tu próxima cita es:</strong>&nbsp;${fmtFecha(proximaCitaGeneral.fecha)} · ${fmtHora12(proximaCitaGeneral.hora)}</div>` : ''}
+          ${proximaCitaGeneral ? `<div class="semana-proxima">🗓️ <strong>Tu próxima cita es:</strong>&nbsp;${fmtFecha(proximaCitaGeneral.fecha, { conDia: true })} · ${fmtHora12(proximaCitaGeneral.hora)}</div>` : ''}
 
           <div class="horarios-lista">
             ${horariosFijos.map(h => `
@@ -682,10 +655,10 @@
                 ` : ''}
                 ${h.proximaCita ? `
                   <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:12px;">
-                    <button class="btn-sm" type="button" id="btn-reagendar-${h.id}" title="Mover esta clase a otro horario libre (hasta 1 día antes)">↻ Reagendar</button>
+                    <button class="btn-sm" type="button" id="btn-reagendar-${h.id}" title="Cambiar tu horario fijo a otro día u hora libre (hasta 1 día antes)">↻ Reagendar</button>
                     <button class="btn-sm btn-sm-danger" type="button" id="btn-cancelar-emergencia-${h.id}" title="Cancelar esta clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
                   </div>
-                  <p class="input-hint" style="margin-top:8px;">Próxima: ${fmtFecha(h.proximaCita.fecha)} · ${fmtHora12(h.proximaCita.hora)}. Reagendar hasta 1 día antes; si cancelas el mismo día, la sesión se cobra igual.</p>
+                  <p class="input-hint" style="margin-top:8px;">Próxima: ${fmtFecha(h.proximaCita.fecha)} · ${fmtHora12(h.proximaCita.hora)}. Reagendar cambia tu horario fijo desde esa fecha en adelante (hasta 1 día antes); si cancelas el mismo día, la sesión se cobra igual.</p>
                   <div id="reagendar-area-${h.id}" style="margin-top:10px;"></div>
                 ` : `<div class="empty-state" style="margin-top:12px;">No tienes próximas clases programadas en este horario.</div>`}
                 <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--linea);">
