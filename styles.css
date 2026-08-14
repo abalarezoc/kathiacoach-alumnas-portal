@@ -269,6 +269,14 @@ table.progreso tr:last-child td { border-bottom: none; }
 .resumen-label { font-size: 11.5px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
 .resumen-valor { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; color: var(--texto); line-height: 1.4; }
 
+/* Invitación a agendar la primera clase, cuando el landing no tiene
+   ninguna cita todavía que mostrar en el calendario del mes. */
+.cta-agendar {
+  background: var(--acento-suave); border: 1px solid var(--acento); text-align: center;
+  padding: 22px 24px; margin: 24px 0 30px;
+}
+.cta-agendar p { font-size: 14.5px; color: var(--texto); margin-bottom: 14px; }
+
 /* Una tarjeta por cada horario fijo activo, cuando la alumna tiene más
    de uno (ej. lunes y viernes) — cada una con sus propias acciones. */
 .horarios-lista { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }

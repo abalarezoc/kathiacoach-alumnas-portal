@@ -736,13 +736,19 @@
     const registroConPeso = (progreso || []).find(p => p.peso_kg != null);
     const ultimoPeso = registroConPeso ? registroConPeso.peso_kg : null;
 
+    // Cuántas de sus citas (fijas o puntuales) caen este mes — para la
+    // tercera tarjeta resumen.
+    const hoyDateObj = new Date();
+    const mesActualStr = `${hoyDateObj.getFullYear()}-${String(hoyDateObj.getMonth() + 1).padStart(2, '0')}`;
+    const clasesEsteMes = todasMisCitas.filter(c => c.fecha.slice(0, 7) === mesActualStr).length;
+
     // Tarjetas resumen del landing: de un vistazo, sin entrar a ninguna
     // pestaña, la alumna ve cuándo es su próxima clase, su último peso
-    // registrado y cuántas sesiones lleva. Cada una lleva a la pestaña
-    // correspondiente si quiere ver el detalle completo.
+    // registrado y cuántas clases le quedan este mes. Cada una lleva a
+    // la pestaña correspondiente si quiere ver el detalle completo.
     const resumenHTML = `
       <div class="resumen-cards">
-        <div class="resumen-card resumen-card--destacada" id="resumen-proxima" role="button" tabindex="0" title="Ver o cambiar tu horario">
+        <div class="resumen-card resumen-card--destacada" id="resumen-proxima" role="button" tabindex="0" title="Ver o agendar tu clase">
           <div class="resumen-icon">🗓️</div>
           <div class="resumen-label">Próxima clase</div>
           <div class="resumen-valor">${proximaCitaGeneral
@@ -754,11 +760,27 @@
           <div class="resumen-label">Último peso registrado</div>
           <div class="resumen-valor">${ultimoPeso != null ? `${ultimoPeso} kg` : 'Sin registros aún'}</div>
         </div>
-        <div class="resumen-card" id="resumen-sesiones" role="button" tabindex="0" title="Ver tu progreso completo">
-          <div class="resumen-icon">📈</div>
-          <div class="resumen-label">Sesiones registradas</div>
-          <div class="resumen-valor">${total}</div>
+        <div class="resumen-card" id="resumen-clases-mes" role="button" tabindex="0" title="Ver tus clases del mes">
+          <div class="resumen-icon">📆</div>
+          <div class="resumen-label">Clases restantes este mes</div>
+          <div class="resumen-valor">${clasesEsteMes}</div>
         </div>
+      </div>
+    `;
+
+    // El calendario de "tus clases este mes" vive en el landing, no
+    // dentro de una pestaña — pero solo tiene sentido mostrarlo si ya
+    // hay algo agendado. Si no, invita a agendar en su lugar.
+    const misClasesMesHTML = todasMisCitas.length ? `
+      <div style="margin:24px 0 30px;">
+        <h3 style="margin-bottom:4px;">🗓️ Tus clases este mes</h3>
+        <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
+        <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
+      </div>
+    ` : `
+      <div class="cta-agendar">
+        <p>Aún no tienes ninguna clase agendada.</p>
+        <button type="button" id="btn-cta-agendar" class="btn-sm" style="background:var(--acento); color:#fff; border-color:var(--acento);">📅 Agendar mi primera clase</button>
       </div>
     `;
 
@@ -769,10 +791,11 @@
       </p>
 
       ${resumenHTML}
+      ${misClasesMesHTML}
 
       <div class="portal-tabs" role="tablist">
         <button type="button" class="portal-tab active" id="tab-progreso" role="tab" aria-selected="true" title="Ver tu peso, medidas y avance a lo largo del tiempo">📊 Mi progreso</button>
-        <button type="button" class="portal-tab" id="tab-horario" role="tab" aria-selected="false" title="Ver o cambiar tu horario fijo, reagendar o cancelar una clase">📅 Mi horario${(!horariosFijos.length || hayRecordatorioPendiente) ? '<span class="tab-dot" title="Necesita tu atención"></span>' : ''}</button>
+        <button type="button" class="portal-tab" id="tab-horario" role="tab" aria-selected="false" title="Agendar una clase, ver tu horario fijo, reagendar o cancelar">📅 Agendar Clase${(!horariosFijos.length || hayRecordatorioPendiente) ? '<span class="tab-dot" title="Necesita tu atención"></span>' : ''}</button>
       </div>
 
       <section class="block panel-tab" id="panel-progreso">
@@ -785,13 +808,8 @@
 
       <section class="block panel-tab" id="panel-horario" style="display:none;">
         <div style="margin-bottom:28px;">
-          <h3>🗓️ Tus clases este mes</h3>
-          <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
-          <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
-          <div style="margin-top:14px;">
-            <span class="back-link" id="btn-agendar-puntual" title="Agendar una clase suelta, además de tu horario fijo">➕ Agendar una clase adicional (puntual)</span>
-            <div id="agendar-puntual-area" style="margin-top:12px; display:none;"></div>
-          </div>
+          <span class="back-link" id="btn-agendar-puntual" title="Agendar una clase suelta, además de tu horario fijo">➕ Agendar una clase adicional (puntual)</span>
+          <div id="agendar-puntual-area" style="margin-top:12px; display:none;"></div>
         </div>
 
         ${horariosFijos.length ? `
@@ -883,7 +901,7 @@
 
     // Las tarjetas resumen del landing también llevan a su pestaña —
     // click o Enter/Espacio (son role="button").
-    [['resumen-proxima', 'horario'], ['resumen-peso', 'progreso'], ['resumen-sesiones', 'progreso']].forEach(([id, tab]) => {
+    [['resumen-proxima', 'horario'], ['resumen-peso', 'progreso'], ['resumen-clases-mes', 'horario']].forEach(([id, tab]) => {
       const card = document.getElementById(id);
       if (!card) return;
       card.addEventListener('click', () => activarTabPortal(tab));
@@ -892,7 +910,14 @@
       });
     });
 
-    construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia);
+    // El calendario de "tus clases este mes" solo existe en el DOM si ya
+    // hay algo agendado; si no, lo que hay es el botón de invitación.
+    if (todasMisCitas.length) {
+      construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia);
+    } else {
+      const btnCta = document.getElementById('btn-cta-agendar');
+      if (btnCta) btnCta.addEventListener('click', () => activarTabPortal('horario'));
+    }
     wireAgendarPuntual();
 
     if (horariosFijos.length) {
