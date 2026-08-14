@@ -13,6 +13,11 @@
 
 const { CALCOM_USERNAME, HORARIO_FIJO_SLUG, calcomHeaders } = require('./_calcom');
 
+// El endpoint /v2/slots es una versión distinta a la que usan los demás
+// endpoints de Cal.com (bookings, reschedule, cancel) — necesita este
+// cal-api-version específico, si no responde 404 "Cannot GET /v2/slots".
+const SLOTS_API_VERSION = '2024-09-04';
+
 exports.handler = async function (event) {
   const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
   if (!CALCOM_API_KEY) {
@@ -27,14 +32,19 @@ exports.handler = async function (event) {
 
   try {
     const url = `https://api.cal.com/v2/slots?username=${CALCOM_USERNAME}&eventTypeSlug=${HORARIO_FIJO_SLUG}` +
-      `&startTime=${encodeURIComponent(ahora.toISOString())}&endTime=${encodeURIComponent(hasta.toISOString())}`;
-    const resp = await fetch(url, { headers: calcomHeaders(CALCOM_API_KEY) });
+      `&start=${encodeURIComponent(ahora.toISOString())}&end=${encodeURIComponent(hasta.toISOString())}&timeZone=America%2FLima`;
+    const resp = await fetch(url, {
+      headers: { ...calcomHeaders(CALCOM_API_KEY), 'cal-api-version': SLOTS_API_VERSION },
+    });
     const data = await resp.json();
     if (!resp.ok) {
       const msj = (data && data.error && data.error.message) || data.message || 'No se pudieron cargar los horarios.';
       return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, mensaje: msj, slots: {} }) };
     }
-    const slots = (data && data.data && data.data.slots) || {};
+    // La respuesta de Cal.com trae el mapa de horarios directo en
+    // data.data (clave = fecha, valor = lista de slots), no anidado
+    // bajo data.data.slots.
+    const slots = (data && data.data) || {};
     return { statusCode: 200, headers: { 'Content-Type': 'application/json', 'Cache-Control': 'no-store' }, body: JSON.stringify({ ok: true, slots }) };
   } catch (err) {
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: false, mensaje: err.message, slots: {} }) };
