@@ -58,6 +58,101 @@
     return `Llevas ${n} registros. Este historial ya cuenta una historia real de esfuerzo.`;
   }
 
+  // Construye un calendario de mes dentro de "area": los días con
+  // horarios libres se ven resaltados y son clickeables; al elegir un
+  // día se muestran sus horas abajo como chips. Se usa tanto para
+  // reagendar una clase como para elegir/cambiar el horario fijo.
+  // onElegir(boton, isoInicio) se llama al hacer clic en una hora.
+  function construirCalendarioHorarios(area, slotsPorDia, onElegir) {
+    const dias = Object.keys(slotsPorDia).sort();
+    if (!dias.length) {
+      area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora. Escríbele a Kathia directamente por WhatsApp.</div>`;
+      return;
+    }
+    const hoyLima = new Date(Date.now() - 5 * 3600000);
+    const hoyStr = hoyLima.toISOString().slice(0, 10);
+    const ultimaFecha = new Date(dias[dias.length - 1] + 'T00:00:00');
+    let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
+    let diaSeleccionado = dias[0];
+    const pad = (n) => String(n).padStart(2, '0');
+
+    function render() {
+      const primerDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1);
+      const ultimoDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 0);
+      const offset = primerDiaMes.getDay();
+      const filas = Math.ceil((offset + ultimoDiaMes.getDate()) / 7);
+      const nombreMes = mesActual.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+      const puedeAnterior = mesActual.getFullYear() > hoyLima.getFullYear() ||
+        (mesActual.getFullYear() === hoyLima.getFullYear() && mesActual.getMonth() > hoyLima.getMonth());
+      const puedeSiguiente = mesActual.getFullYear() < ultimaFecha.getFullYear() ||
+        (mesActual.getFullYear() === ultimaFecha.getFullYear() && mesActual.getMonth() < ultimaFecha.getMonth());
+
+      let celdas = '';
+      for (let i = 0; i < filas * 7; i++) {
+        const numDia = i - offset + 1;
+        if (numDia < 1 || numDia > ultimoDiaMes.getDate()) {
+          celdas += `<div class="cal-celda cal-celda-vacia"></div>`;
+          continue;
+        }
+        const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
+        const tieneSlots = !!(slotsPorDia[fechaStr] && slotsPorDia[fechaStr].length);
+        const clases = ['cal-celda', tieneSlots ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneSlots ? '' : ' disabled'}>${numDia}${tieneSlots ? '<span class="cal-punto"></span>' : ''}</button>`;
+      }
+
+      area.innerHTML = `
+        <div class="cal-widget">
+          <div class="cal-header">
+            <button type="button" class="cal-nav" id="cal-prev" title="Mes anterior"${puedeAnterior ? '' : ' disabled'}>‹</button>
+            <div class="cal-mes-titulo">${nombreMes}</div>
+            <button type="button" class="cal-nav" id="cal-next" title="Mes siguiente"${puedeSiguiente ? '' : ' disabled'}>›</button>
+          </div>
+          <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+          <div class="cal-celdas">${celdas}</div>
+          <div id="cal-horas-wrap"></div>
+        </div>
+      `;
+
+      const btnPrev = area.querySelector('#cal-prev');
+      const btnNext = area.querySelector('#cal-next');
+      if (btnPrev) btnPrev.addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() - 1, 1); render(); });
+      if (btnNext) btnNext.addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 1); render(); });
+      area.querySelectorAll('button[data-fecha]:not(:disabled)').forEach(b => {
+        b.addEventListener('click', () => { diaSeleccionado = b.dataset.fecha; render(); });
+      });
+
+      renderHoras();
+    }
+
+    function renderHoras() {
+      const wrap = area.querySelector('#cal-horas-wrap');
+      if (!wrap) return;
+      const slots = slotsPorDia[diaSeleccionado] || [];
+      const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
+      const tituloDia = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+      if (!slots.length) {
+        wrap.innerHTML = `<div class="empty-state">No hay horarios libres ese día. Elige otro día del calendario.</div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
+        <div class="slots-grid">
+          ${slots.map(s => {
+            const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+            return `<button class="slot-chip" type="button" data-time="${s.start}">${horaTxt}</button>`;
+          }).join('')}
+        </div>
+      `;
+      wrap.querySelectorAll('button[data-time]').forEach(b => {
+        b.addEventListener('click', () => onElegir(b, b.dataset.time));
+      });
+    }
+
+    render();
+  }
+
   // Conecta los botones "Reagendar" y "Cancelar por emergencia" que se
   // muestran cuando la alumna ya tiene un horario fijo asignado.
   function wireHorarioFijoBotones(cita) {
@@ -78,60 +173,37 @@
         }
         area.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
         try {
-          const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=14');
+          const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=30');
           const data = await resp.json();
           if (!data.ok) {
             area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
             return;
           }
-          const dias = Object.keys(data.slots || {}).sort();
-          if (!dias.length) {
-            area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora. Escríbele a Kathia directamente por WhatsApp.</div>`;
-            return;
-          }
-          area.innerHTML = `<div class="slots-wrap">${dias.map(dia => {
-            const fechaObj = new Date(dia + 'T00:00:00');
-            const diaTitulo = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
-            const slots = data.slots[dia] || [];
-            return `
-              <div class="slots-dia">
-                <div class="slots-dia-titulo"><span class="dia-icono">📆</span>${diaTitulo}</div>
-                <div class="slots-grid">
-                  ${slots.map(s => {
-                    const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-                    return `<button class="slot-chip" type="button" data-time="${s.start}" title="Mover tu clase a este horario">🕐 ${horaTxt}</button>`;
-                  }).join('')}
-                </div>
-              </div>
-            `;
-          }).join('')}</div>`;
-          area.querySelectorAll('button[data-time]').forEach(b => {
-            b.addEventListener('click', async () => {
-              b.disabled = true;
-              const original = b.textContent;
-              b.textContent = 'Reagendando...';
-              try {
-                const { data: { session } } = await supa.auth.getSession();
-                const resp2 = await fetch('/.netlify/functions/reagendar-cita', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ citaId: cita.id, nuevoInicioUTC: b.dataset.time }),
-                });
-                const resultado = await resp2.json();
-                if (!resultado.ok) {
-                  alert('No se pudo reagendar: ' + resultado.mensaje);
-                  b.disabled = false;
-                  b.textContent = original;
-                  return;
-                }
-                alert('Listo, tu clase quedó reagendada.');
-                init();
-              } catch (err) {
-                alert('No se pudo reagendar: ' + err.message);
+          construirCalendarioHorarios(area, data.slots || {}, async (b, isoTime) => {
+            b.disabled = true;
+            const original = b.textContent;
+            b.textContent = 'Reagendando...';
+            try {
+              const { data: { session } } = await supa.auth.getSession();
+              const resp2 = await fetch('/.netlify/functions/reagendar-cita', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                body: JSON.stringify({ citaId: cita.id, nuevoInicioUTC: isoTime }),
+              });
+              const resultado = await resp2.json();
+              if (!resultado.ok) {
+                alert('No se pudo reagendar: ' + resultado.mensaje);
                 b.disabled = false;
                 b.textContent = original;
+                return;
               }
-            });
+              alert('Listo, tu clase quedó reagendada.');
+              init();
+            } catch (err) {
+              alert('No se pudo reagendar: ' + err.message);
+              b.disabled = false;
+              b.textContent = original;
+            }
           });
         } catch (err) {
           area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios.</div>`;
@@ -187,67 +259,44 @@
     if (!area) return;
     area.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
     try {
-      const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=14');
+      const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=30');
       const data = await resp.json();
       if (!data.ok) {
         area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
         return;
       }
-      const dias = Object.keys(data.slots || {}).sort();
-      if (!dias.length) {
-        area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora. Escríbele a Kathia directamente por WhatsApp.</div>`;
-        return;
-      }
-      area.innerHTML = `<div class="slots-wrap">${dias.map(dia => {
-        const fechaObj = new Date(dia + 'T00:00:00');
-        const diaTitulo = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
-        const slots = data.slots[dia] || [];
-        return `
-          <div class="slots-dia">
-            <div class="slots-dia-titulo"><span class="dia-icono">📆</span>${diaTitulo}</div>
-            <div class="slots-grid">
-              ${slots.map(s => {
-                const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-                return `<button class="slot-chip" type="button" data-time="${s.start}" title="${opciones.reemplazar ? 'Cambiar tu horario fijo a este día y hora' : 'Elegir este día y hora como tu horario fijo semanal'}">🕐 ${horaTxt}</button>`;
-              }).join('')}
-            </div>
-          </div>
-        `;
-      }).join('')}</div>`;
-      area.querySelectorAll('button[data-time]').forEach(b => {
-        b.addEventListener('click', async () => {
-          const { diaSemana, hora } = limaDiaHora(b.dataset.time);
-          const mensajeConfirm = opciones.reemplazar
-            ? `¿Cambiar tu horario fijo a ${nombreDia(diaSemana)} a las ${fmtHora12(hora)}?`
-            : `¿Confirmar ${nombreDia(diaSemana)} a las ${fmtHora12(hora)} como tu horario fijo de cada semana?`;
-          if (!confirm(mensajeConfirm)) return;
-          b.disabled = true;
-          const original = b.textContent;
-          b.textContent = opciones.reemplazar ? 'Cambiando...' : 'Creando tu horario...';
-          try {
-            const { data: { session } } = await supa.auth.getSession();
-            const payload = { diaSemana, hora };
-            if (opciones.reemplazar) payload.reemplazar = true;
-            const resp2 = await fetch('/.netlify/functions/asignar-horario-fijo', {
-              method: 'POST',
-              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-              body: JSON.stringify(payload),
-            });
-            const resultado = await resp2.json();
-            if (!resultado.ok) {
-              alert('No se pudo guardar tu horario: ' + resultado.mensaje);
-              b.disabled = false;
-              b.textContent = original;
-              return;
-            }
-            alert(opciones.reemplazar ? '¡Listo! Tu horario quedó actualizado.' : '¡Listo! Ese quedó como tu horario fijo de cada semana.');
-            init();
-          } catch (err) {
-            alert('No se pudo guardar tu horario: ' + err.message);
+      construirCalendarioHorarios(area, data.slots || {}, async (b, isoTime) => {
+        const { diaSemana, hora } = limaDiaHora(isoTime);
+        const mensajeConfirm = opciones.reemplazar
+          ? `¿Cambiar tu horario fijo a ${nombreDia(diaSemana)} a las ${fmtHora12(hora)}?`
+          : `¿Confirmar ${nombreDia(diaSemana)} a las ${fmtHora12(hora)} como tu horario fijo de cada semana?`;
+        if (!confirm(mensajeConfirm)) return;
+        b.disabled = true;
+        const original = b.textContent;
+        b.textContent = opciones.reemplazar ? 'Cambiando...' : 'Creando tu horario...';
+        try {
+          const { data: { session } } = await supa.auth.getSession();
+          const payload = { diaSemana, hora };
+          if (opciones.reemplazar) payload.reemplazar = true;
+          const resp2 = await fetch('/.netlify/functions/asignar-horario-fijo', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify(payload),
+          });
+          const resultado = await resp2.json();
+          if (!resultado.ok) {
+            alert('No se pudo guardar tu horario: ' + resultado.mensaje);
             b.disabled = false;
             b.textContent = original;
+            return;
           }
-        });
+          alert(opciones.reemplazar ? '¡Listo! Tu horario quedó actualizado.' : '¡Listo! Ese quedó como tu horario fijo de cada semana.');
+          init();
+        } catch (err) {
+          alert('No se pudo guardar tu horario: ' + err.message);
+          b.disabled = false;
+          b.textContent = original;
+        }
       });
     } catch (err) {
       area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios.</div>`;
