@@ -160,10 +160,13 @@
   }
 
   // Calendario de solo lectura: marca los días que ya tienen alguna
-  // clase agendada (fija o puntual) y, al elegir uno, muestra el
-  // detalle con opción de cancelar cada cita puntual. citasPorDia es
+  // clase agendada (fija o puntual). Al elegir un día, muestra el
+  // detalle de cada cita con sus acciones — las de horario fijo traen
+  // reagendar / cancelar por emergencia / cancelar todo el horario
+  // (igual que en la pestaña "Agendar Clase"); las puntuales solo
+  // cancelar, porque no pertenecen a ninguna serie. citasPorDia es
   // { 'YYYY-MM-DD': [{id, fecha, hora, horario_fijo_id}, ...] }.
-  function construirCalendarioMisClases(area, citasPorDia) {
+  function construirCalendarioMisClases(area, citasPorDia, horariosFijos) {
     const hoyLima = new Date(Date.now() - 5 * 3600000);
     const hoyStr = hoyLima.toISOString().slice(0, 10);
     let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
@@ -238,11 +241,25 @@
         <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
         ${citas.map(c => `
           <div class="horario-card" style="padding:12px 14px; margin-bottom:8px;">
-            <div class="horario-card-titulo" style="font-size:13.5px;">${fmtHora12(c.hora)} — ${c.horario_fijo_id ? 'Horario fijo' : 'Clase adicional'}</div>
-            <span class="back-link back-link-danger" data-cancelar-cita="${c.id}" style="font-size:12.5px;">✕ Cancelar esta clase</span>
+            <div class="horario-card-titulo" style="font-size:13.5px;">${fmtHora12(c.hora)} — ${c.horario_fijo_id != null ? 'Horario fijo' : 'Clase adicional'}</div>
+            ${c.horario_fijo_id != null ? `
+              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
+                <button class="btn-sm" type="button" id="mc-reagendar-${c.id}" title="Cambiar tu horario fijo a otro día u hora libre (hasta 1 día antes)">↻ Reagendar</button>
+                <button class="btn-sm btn-sm-danger" type="button" id="mc-cancelar-emergencia-${c.id}" title="Cancelar esta clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
+              </div>
+              <div id="mc-reagendar-area-${c.id}" style="margin-top:8px;"></div>
+              <div style="margin-top:10px;">
+                <span class="back-link back-link-danger" id="mc-cancelar-serie-${c.id}" style="font-size:12.5px;" title="Deja de tener esta clase fija cada semana">🛑 Cancelar este horario fijo</span>
+                <div id="mc-cancelar-serie-area-${c.id}" style="margin-top:8px;"></div>
+              </div>
+            ` : `
+              <span class="back-link back-link-danger" data-cancelar-cita="${c.id}" style="font-size:12.5px;">✕ Cancelar esta clase</span>
+            `}
           </div>
         `).join('')}
       `;
+
+      // Clases puntuales: solo cancelar.
       wrap.querySelectorAll('[data-cancelar-cita]').forEach(el => {
         el.addEventListener('click', async () => {
           if (!confirm('¿Cancelar esta clase?')) return;
@@ -260,6 +277,81 @@
             alert('No se pudo cancelar: ' + err.message);
           }
         });
+      });
+
+      // Clases de horario fijo: reagendar (cambia el horario fijo desde
+      // esa fecha en adelante), cancelar por emergencia (solo esta) o
+      // cancelar todo el horario fijo (la serie completa).
+      citas.filter(c => c.horario_fijo_id != null).forEach(c => {
+        const h = horariosFijos.find(x => x.id === c.horario_fijo_id);
+        if (!h) return;
+
+        function horasFaltantes() {
+          const inicio = new Date(`${c.fecha}T${c.hora}:00.000-05:00`);
+          return (inicio.getTime() - Date.now()) / 3600000;
+        }
+
+        const btnReagendar = wrap.querySelector(`#mc-reagendar-${c.id}`);
+        if (btnReagendar) {
+          btnReagendar.addEventListener('click', () => {
+            if (horasFaltantes() < 24) {
+              wrap.querySelector(`#mc-reagendar-area-${c.id}`).innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu clase. Escríbele a Kathia por WhatsApp.</div>`;
+              return;
+            }
+            cargarSelectorHorarios(`mc-reagendar-area-${c.id}`, { reemplazar: true, horarioFijoId: h.id });
+          });
+        }
+
+        const btnCancelarEmergencia = wrap.querySelector(`#mc-cancelar-emergencia-${c.id}`);
+        if (btnCancelarEmergencia) {
+          btnCancelarEmergencia.addEventListener('click', async () => {
+            const esHoy = c.fecha === hoyStr;
+            const aviso = esHoy
+              ? '¿Cancelar esta clase? Como es hoy mismo, la sesión se cobra igual según la política. ¿Confirmas la cancelación de emergencia?'
+              : '¿Cancelar esta clase por emergencia?';
+            if (!confirm(aviso)) return;
+            try {
+              const { data: { session } } = await supa.auth.getSession();
+              const resp = await fetch('/.netlify/functions/cancelar-cita', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                body: JSON.stringify({ citaId: c.id }),
+              });
+              const resultado = await resp.json();
+              if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
+              alert('Tu clase quedó cancelada.');
+              init();
+            } catch (err) {
+              alert('No se pudo cancelar: ' + err.message);
+            }
+          });
+        }
+
+        const btnCancelarSerie = wrap.querySelector(`#mc-cancelar-serie-${c.id}`);
+        if (btnCancelarSerie) {
+          btnCancelarSerie.addEventListener('click', async () => {
+            const aviso = `¿Seguro que quieres cancelar tu horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}?\n\nSe cancelan tus próximas clases automáticas en ese horario. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.`;
+            if (!confirm(aviso)) return;
+            const areaSerie = wrap.querySelector(`#mc-cancelar-serie-area-${c.id}`);
+            areaSerie.innerHTML = `<div class="loading">Cancelando este horario...</div>`;
+            try {
+              const { data: { session } } = await supa.auth.getSession();
+              const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+                method: 'POST',
+                headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                body: JSON.stringify({ horarioFijoId: h.id }),
+              });
+              const resultado = await resp.json();
+              if (!resultado.ok) {
+                areaSerie.innerHTML = `<div class="empty-state">No se pudo cancelar: ${resultado.mensaje}</div>`;
+                return;
+              }
+              init();
+            } catch (err) {
+              areaSerie.innerHTML = `<div class="empty-state">No se pudo cancelar: ${err.message}</div>`;
+            }
+          });
+        }
       });
     }
 
@@ -962,7 +1054,7 @@
     // El calendario de "tus clases este mes" solo existe en el DOM si ya
     // hay algo agendado; si no, lo que hay es el botón de invitación.
     if (todasMisCitas.length) {
-      construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia);
+      construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia, horariosFijos);
     } else {
       const btnCta = document.getElementById('btn-cta-agendar');
       if (btnCta) btnCta.addEventListener('click', () => activarTabPortal('horario'));
