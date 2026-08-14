@@ -248,6 +248,12 @@ table.progreso tr:last-child td { border-bottom: none; }
   background: var(--acento-suave); border-radius: 8px; padding: 11px 14px; margin-top: 14px;
 }
 
+/* Una tarjeta por cada horario fijo activo, cuando la alumna tiene más
+   de uno (ej. lunes y viernes) — cada una con sus propias acciones. */
+.horarios-lista { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.horario-card { background: #fff; border: 1px solid var(--linea); padding: 16px 18px; }
+.horario-card-titulo { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px; color: var(--texto); }
+
 /* Botones secundarios (reagendar / cancelar una clase): no deben pesar
    visualmente más que el horario en sí, así que van chicos y con
    contorno en vez del botón grande y sólido de .btn-primary/.btn-danger. */
