@@ -938,15 +938,13 @@
       </div>
     `;
 
-    // El calendario de "tus clases este mes" vive en el landing, no
-    // dentro de una pestaña — pero solo tiene sentido mostrarlo si ya
-    // hay algo agendado. Si no, invita a agendar en su lugar.
+    // El calendario de "tus clases este mes" vive en el dashboard de
+    // inicio — pero solo tiene sentido mostrarlo si ya hay algo agendado.
+    // Si no, invita a agendar en su lugar.
     const misClasesMesHTML = todasMisCitas.length ? `
-      <div style="margin:24px 0 30px;">
-        <h3 style="margin-bottom:4px;">🗓️ Tus clases este mes</h3>
-        <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
-        <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
-      </div>
+      <h3 style="margin-bottom:4px;">🗓️ Tus clases este mes</h3>
+      <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
+      <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
     ` : `
       <div class="cta-agendar">
         <p>Aún no tienes ninguna clase agendada.</p>
@@ -960,15 +958,24 @@
         “${mensajeAnimo(total)}”
       </p>
 
-      ${resumenHTML}
-      ${misClasesMesHTML}
-
       <div class="portal-tabs" role="tablist">
-        <button type="button" class="portal-tab active" id="tab-progreso" role="tab" aria-selected="true" title="Ver tu peso, medidas y avance a lo largo del tiempo">📊 Mi progreso</button>
+        <button type="button" class="portal-tab active" id="tab-inicio" role="tab" aria-selected="true" title="Tu resumen y calendario">🏠 Inicio</button>
+        <button type="button" class="portal-tab" id="tab-progreso" role="tab" aria-selected="false" title="Ver tu peso, medidas y avance a lo largo del tiempo">📊 Mi progreso</button>
         <button type="button" class="portal-tab" id="tab-horario" role="tab" aria-selected="false" title="Agendar una clase, ver tu horario fijo, reagendar o cancelar">📅 Agendar Clase${(!horariosFijos.length || hayRecordatorioPendiente) ? '<span class="tab-dot" title="Necesita tu atención"></span>' : ''}</button>
       </div>
 
-      <section class="block panel-tab" id="panel-progreso">
+      <section class="block panel-tab" id="panel-inicio">
+        <div class="dashboard-row">
+          <div class="dashboard-indicadores">
+            ${resumenHTML}
+          </div>
+          <div class="dashboard-calendario">
+            ${misClasesMesHTML}
+          </div>
+        </div>
+      </section>
+
+      <section class="block panel-tab" id="panel-progreso" style="display:none;">
         <h3>📊 Tu progreso</h3>
         <p class="panel-sub">Así ha ido cambiando tu progreso, sesión a sesión.</p>
         ${metaHTML}
@@ -1024,19 +1031,24 @@
       </section>
     `;
 
+    const tabInicio = document.getElementById('tab-inicio');
     const tabProgreso = document.getElementById('tab-progreso');
     const tabHorario = document.getElementById('tab-horario');
+    const panelInicio = document.getElementById('panel-inicio');
     const panelProgreso = document.getElementById('panel-progreso');
     const panelHorario = document.getElementById('panel-horario');
     function activarTabPortal(cual) {
-      const esProgreso = cual === 'progreso';
-      tabProgreso.classList.toggle('active', esProgreso);
-      tabHorario.classList.toggle('active', !esProgreso);
-      tabProgreso.setAttribute('aria-selected', String(esProgreso));
-      tabHorario.setAttribute('aria-selected', String(!esProgreso));
-      panelProgreso.style.display = esProgreso ? '' : 'none';
-      panelHorario.style.display = esProgreso ? 'none' : '';
+      tabInicio.classList.toggle('active', cual === 'inicio');
+      tabProgreso.classList.toggle('active', cual === 'progreso');
+      tabHorario.classList.toggle('active', cual === 'horario');
+      tabInicio.setAttribute('aria-selected', String(cual === 'inicio'));
+      tabProgreso.setAttribute('aria-selected', String(cual === 'progreso'));
+      tabHorario.setAttribute('aria-selected', String(cual === 'horario'));
+      panelInicio.style.display = cual === 'inicio' ? '' : 'none';
+      panelProgreso.style.display = cual === 'progreso' ? '' : 'none';
+      panelHorario.style.display = cual === 'horario' ? '' : 'none';
     }
+    tabInicio.addEventListener('click', () => activarTabPortal('inicio'));
     tabProgreso.addEventListener('click', () => activarTabPortal('progreso'));
     tabHorario.addEventListener('click', () => activarTabPortal('horario'));
 
