@@ -256,6 +256,19 @@ table.progreso tr:last-child td { border-bottom: none; }
   background: var(--acento-suave); border-radius: 8px; padding: 11px 14px; margin-top: 14px;
 }
 
+/* --- Tarjetas resumen del landing (próxima clase, último peso, sesiones) --- */
+.resumen-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 22px 0 30px; }
+.resumen-card {
+  background: #fff; border: 1px solid var(--linea); padding: 18px 16px; text-align: center;
+  cursor: pointer; transition: border-color .12s ease, transform .12s ease;
+}
+.resumen-card:hover { border-color: var(--acento); transform: translateY(-1px); }
+.resumen-card:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.resumen-card--destacada { background: var(--acento-suave); border-color: var(--acento); }
+.resumen-icon { font-size: 20px; margin-bottom: 6px; }
+.resumen-label { font-size: 11.5px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 8px; }
+.resumen-valor { font-family: 'Playfair Display', serif; font-size: 16px; font-weight: 600; color: var(--texto); line-height: 1.4; }
+
 /* Una tarjeta por cada horario fijo activo, cuando la alumna tiene más
    de uno (ej. lunes y viernes) — cada una con sus propias acciones. */
 .horarios-lista { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }

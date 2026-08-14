@@ -584,11 +584,44 @@
       }
     }
 
+    // Peso más reciente (el primer registro con peso_kg, ya que "progreso"
+    // viene ordenado del más nuevo al más viejo) — para la tarjeta resumen.
+    const registroConPeso = (progreso || []).find(p => p.peso_kg != null);
+    const ultimoPeso = registroConPeso ? registroConPeso.peso_kg : null;
+
+    // Tarjetas resumen del landing: de un vistazo, sin entrar a ninguna
+    // pestaña, la alumna ve cuándo es su próxima clase, su último peso
+    // registrado y cuántas sesiones lleva. Cada una lleva a la pestaña
+    // correspondiente si quiere ver el detalle completo.
+    const resumenHTML = `
+      <div class="resumen-cards">
+        <div class="resumen-card resumen-card--destacada" id="resumen-proxima" role="button" tabindex="0" title="Ver o cambiar tu horario">
+          <div class="resumen-icon">🗓️</div>
+          <div class="resumen-label">Próxima clase</div>
+          <div class="resumen-valor">${proximaCitaGeneral
+            ? `${fmtFecha(proximaCitaGeneral.fecha)}<br>${fmtHora12(proximaCitaGeneral.hora)}`
+            : 'Aún no tienes una clase fija agendada'}</div>
+        </div>
+        <div class="resumen-card" id="resumen-peso" role="button" tabindex="0" title="Ver tu progreso completo">
+          <div class="resumen-icon">⚖️</div>
+          <div class="resumen-label">Último peso registrado</div>
+          <div class="resumen-valor">${ultimoPeso != null ? `${ultimoPeso} kg` : 'Sin registros aún'}</div>
+        </div>
+        <div class="resumen-card" id="resumen-sesiones" role="button" tabindex="0" title="Ver tu progreso completo">
+          <div class="resumen-icon">📈</div>
+          <div class="resumen-label">Sesiones registradas</div>
+          <div class="resumen-valor">${total}</div>
+        </div>
+      </div>
+    `;
+
     contentEl.innerHTML = `
       <h1 class="greeting">Hola, ${nombre.split(' ')[0]}</h1>
       <p class="greeting-sub" style="font-family:'Playfair Display', serif; font-style:italic; font-size:17px; color:var(--texto);">
         “${mensajeAnimo(total)}”
       </p>
+
+      ${resumenHTML}
 
       <div class="portal-tabs" role="tablist">
         <button type="button" class="portal-tab active" id="tab-progreso" role="tab" aria-selected="true" title="Ver tu peso, medidas y avance a lo largo del tiempo">📊 Mi progreso</button>
@@ -690,6 +723,17 @@
     }
     tabProgreso.addEventListener('click', () => activarTabPortal('progreso'));
     tabHorario.addEventListener('click', () => activarTabPortal('horario'));
+
+    // Las tarjetas resumen del landing también llevan a su pestaña —
+    // click o Enter/Espacio (son role="button").
+    [['resumen-proxima', 'horario'], ['resumen-peso', 'progreso'], ['resumen-sesiones', 'progreso']].forEach(([id, tab]) => {
+      const card = document.getElementById(id);
+      if (!card) return;
+      card.addEventListener('click', () => activarTabPortal(tab));
+      card.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activarTabPortal(tab); }
+      });
+    });
 
     if (horariosFijos.length) {
       horariosFijos.forEach(h => {
