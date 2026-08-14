@@ -24,7 +24,18 @@ const {
 } = require('./_calcom');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
-const SEMANAS_POR_DEFECTO = 12;
+
+// Netlify corta las funciones normales a los 10 segundos. Crear muchas
+// clases en Cal.com una por una (esperando cada respuesta) tarda más que
+// eso, y el navegador recibe una página de error en vez de una respuesta
+// — por eso al elegir horario fallaba con "Unexpected token '<'".
+//
+// Por eso acá solo se crean unas pocas clases de entrada (rápido, bien
+// dentro del límite) y dejamos que renovar-horarios-fijos.js (que corre
+// sola todos los días) le añada el resto hasta llegar a las 12 semanas
+// de colchón — para que el cron la note hay que dejarla por debajo de su
+// UMBRAL_SEMANAS (4), si no se queda estancada en este número para siempre.
+const SEMANAS_POR_DEFECTO = 3;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -124,15 +135,15 @@ exports.handler = async function (event) {
           { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
         );
         const citasViejas = await citasViejasResp.json();
-        for (const cv of (citasViejas || [])) {
-          try {
-            await fetch(`https://api.cal.com/v2/bookings/${cv.calcom_booking_uid}/cancel`, {
-              method: 'POST',
-              headers: calcomHeaders(CALCOM_API_KEY),
-              body: JSON.stringify({ cancellationReason: 'La alumna cambió su horario fijo desde el portal.' }),
-            });
-          } catch (e) { /* seguimos con las demás */ }
-        }
+        // En paralelo (no una por una) para no acercarnos al límite de
+        // tiempo de la función cuando hay varias clases viejas por cancelar.
+        await Promise.all((citasViejas || []).map(cv =>
+          fetch(`https://api.cal.com/v2/bookings/${cv.calcom_booking_uid}/cancel`, {
+            method: 'POST',
+            headers: calcomHeaders(CALCOM_API_KEY),
+            body: JSON.stringify({ cancellationReason: 'La alumna cambió su horario fijo desde el portal.' }),
+          }).catch(() => {})
+        ));
         if (citasViejas && citasViejas.length) {
           await fetch(`${SUPABASE_URL}/rest/v1/citas_fijas?horario_fijo_id=eq.${viejo.id}&estado=eq.programada`, {
             method: 'PATCH',
