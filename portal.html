@@ -159,6 +159,175 @@
     render();
   }
 
+  // Calendario de solo lectura: marca los días que ya tienen alguna
+  // clase agendada (fija o puntual) y, al elegir uno, muestra el
+  // detalle con opción de cancelar cada cita puntual. citasPorDia es
+  // { 'YYYY-MM-DD': [{id, fecha, hora, horario_fijo_id}, ...] }.
+  function construirCalendarioMisClases(area, citasPorDia) {
+    const hoyLima = new Date(Date.now() - 5 * 3600000);
+    const hoyStr = hoyLima.toISOString().slice(0, 10);
+    let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
+    let diaSeleccionado = null;
+    const pad = (n) => String(n).padStart(2, '0');
+
+    function render() {
+      const primerDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1);
+      const ultimoDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 0);
+      const offset = primerDiaMes.getDay();
+      const filas = Math.ceil((offset + ultimoDiaMes.getDate()) / 7);
+      const nombreMes = mesActual.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+      let celdas = '';
+      for (let i = 0; i < filas * 7; i++) {
+        const numDia = i - offset + 1;
+        if (numDia < 1 || numDia > ultimoDiaMes.getDate()) {
+          celdas += `<div class="cal-celda cal-celda-vacia"></div>`;
+          continue;
+        }
+        const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
+        const tieneCitas = !!(citasPorDia[fechaStr] && citasPorDia[fechaStr].length);
+        const clases = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
+      }
+
+      area.innerHTML = `
+        <div class="cal-widget">
+          <div class="cal-mes-col">
+            <div class="cal-header">
+              <button type="button" class="cal-nav" id="mc-prev" title="Mes anterior">‹</button>
+              <div class="cal-mes-titulo">${nombreMes}</div>
+              <button type="button" class="cal-nav" id="mc-next" title="Mes siguiente">›</button>
+            </div>
+            <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+            <div class="cal-celdas">${celdas}</div>
+          </div>
+          <div class="cal-horas-col" id="mc-detalle-wrap"></div>
+        </div>
+      `;
+
+      area.querySelector('#mc-prev').addEventListener('click', () => {
+        mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() - 1, 1);
+        diaSeleccionado = null;
+        render();
+      });
+      area.querySelector('#mc-next').addEventListener('click', () => {
+        mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 1);
+        diaSeleccionado = null;
+        render();
+      });
+      area.querySelectorAll('button[data-fecha]:not(:disabled)').forEach(b => {
+        b.addEventListener('click', () => { diaSeleccionado = b.dataset.fecha; render(); });
+      });
+
+      renderDetalle();
+    }
+
+    function renderDetalle() {
+      const wrap = area.querySelector('#mc-detalle-wrap');
+      if (!wrap) return;
+      if (!diaSeleccionado) {
+        wrap.innerHTML = `<div class="empty-state">Elige un día marcado para ver el detalle.</div>`;
+        return;
+      }
+      const citas = citasPorDia[diaSeleccionado] || [];
+      const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
+      const tituloDia = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+      wrap.innerHTML = `
+        <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
+        ${citas.map(c => `
+          <div class="horario-card" style="padding:12px 14px; margin-bottom:8px;">
+            <div class="horario-card-titulo" style="font-size:13.5px;">${fmtHora12(c.hora)} — ${c.horario_fijo_id ? 'Horario fijo' : 'Clase adicional'}</div>
+            <span class="back-link back-link-danger" data-cancelar-cita="${c.id}" style="font-size:12.5px;">✕ Cancelar esta clase</span>
+          </div>
+        `).join('')}
+      `;
+      wrap.querySelectorAll('[data-cancelar-cita]').forEach(el => {
+        el.addEventListener('click', async () => {
+          if (!confirm('¿Cancelar esta clase?')) return;
+          try {
+            const { data: { session } } = await supa.auth.getSession();
+            const resp = await fetch('/.netlify/functions/cancelar-cita', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+              body: JSON.stringify({ citaId: Number(el.dataset.cancelarCita) }),
+            });
+            const resultado = await resp.json();
+            if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
+            init();
+          } catch (err) {
+            alert('No se pudo cancelar: ' + err.message);
+          }
+        });
+      });
+    }
+
+    render();
+  }
+
+  // Carga el selector de horarios libres para agendar una clase suelta
+  // ("puntual"): no crea horario fijo, solo una cita individual además
+  // de lo que ya tenga agendado.
+  async function cargarSelectorClasePuntual(areaId) {
+    const area = document.getElementById(areaId);
+    if (!area) return;
+    area.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
+    try {
+      const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=30');
+      const data = await resp.json();
+      if (!data.ok) {
+        area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
+        return;
+      }
+      construirCalendarioHorarios(area, data.slots || {}, async (b, isoTime) => {
+        const { diaSemana, hora } = limaDiaHora(isoTime);
+        if (!confirm(`¿Agendar una clase adicional el ${nombreDia(diaSemana)} a las ${fmtHora12(hora)}? Es una sesión suelta — no cambia tu horario fijo.`)) return;
+        b.disabled = true;
+        const original = b.textContent;
+        b.textContent = 'Agendando...';
+        try {
+          const { data: { session } } = await supa.auth.getSession();
+          const resp2 = await fetch('/.netlify/functions/agendar-clase-puntual', {
+            method: 'POST',
+            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+            body: JSON.stringify({ inicioISO: isoTime }),
+          });
+          const resultado = await resp2.json();
+          if (!resultado.ok) {
+            alert('No se pudo agendar: ' + resultado.mensaje);
+            b.disabled = false;
+            b.textContent = original;
+            return;
+          }
+          alert('¡Listo! Tu clase adicional quedó agendada.');
+          init();
+        } catch (err) {
+          alert('No se pudo agendar: ' + err.message);
+          b.disabled = false;
+          b.textContent = original;
+        }
+      });
+    } catch (err) {
+      area.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios.</div>`;
+    }
+  }
+
+  // Conecta el botón "Agendar una clase adicional (puntual)".
+  function wireAgendarPuntual() {
+    const btn = document.getElementById('btn-agendar-puntual');
+    const area = document.getElementById('agendar-puntual-area');
+    if (!btn || !area) return;
+    btn.addEventListener('click', () => {
+      const oculto = area.style.display === 'none';
+      area.style.display = oculto ? '' : 'none';
+      if (oculto && area.dataset.cargado !== 'true') {
+        area.dataset.cargado = 'true';
+        cargarSelectorClasePuntual('agendar-puntual-area');
+      }
+    });
+  }
+
   // Conecta los botones "Reagendar", "Cancelar por emergencia" (de la
   // próxima clase de ESE horario) y "Cancelar este horario fijo" (esa
   // serie completa) — se llama una vez por cada horario fijo activo que
@@ -418,20 +587,22 @@
     const hoyStr = new Date().toISOString().slice(0, 10);
     const hoyLima = new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 10);
 
-    // Para cada horario fijo, su próxima cita y si toca mostrarle el
-    // recordatorio suave de confirmación (7 días o menos para su fecha
-    // de "próxima confirmación"). Es solo un recordatorio — si lo
-    // ignora, sus clases se siguen reservando igual de fondo.
+    // Todas sus citas programadas —de horario fijo Y clases adicionales
+    // sueltas ("puntuales")— en una sola consulta. De acá sale tanto la
+    // próxima cita de cada horario como el calendario de "tus clases
+    // este mes" y la tarjeta resumen de arriba.
+    const { data: misCitasData } = await supa
+      .from('citas_fijas')
+      .select('id, fecha, hora, horario_fijo_id')
+      .eq('alumna_id', user.id)
+      .eq('estado', 'programada')
+      .gte('fecha', hoyStr)
+      .order('fecha', { ascending: true })
+      .order('hora', { ascending: true });
+    const todasMisCitas = misCitasData || [];
+
     for (const h of horariosFijos) {
-      const { data: citas } = await supa
-        .from('citas_fijas')
-        .select('id, fecha, hora')
-        .eq('horario_fijo_id', h.id)
-        .eq('estado', 'programada')
-        .gte('fecha', hoyStr)
-        .order('fecha', { ascending: true })
-        .limit(1);
-      h.proximaCita = (citas && citas[0]) || null;
+      h.proximaCita = todasMisCitas.find(c => c.horario_fijo_id === h.id) || null;
 
       h.mostrarRecordatorio = false;
       if (h.proxima_confirmacion && h.recordatorio_intervalo_dias > 0) {
@@ -440,13 +611,16 @@
       }
     }
 
-    // La próxima cita entre TODOS sus horarios fijos (la más cercana en
-    // el tiempo), para el resumen de arriba.
-    const proximaCitaGeneral = horariosFijos
-      .map(h => h.proximaCita)
-      .filter(Boolean)
-      .sort((a, b) => (a.fecha + a.hora).localeCompare(b.fecha + b.hora))[0] || null;
+    // La próxima cita entre TODAS sus citas (horario fijo o puntuales),
+    // para el resumen de arriba — ya viene ordenada por fecha/hora.
+    const proximaCitaGeneral = todasMisCitas[0] || null;
     const hayRecordatorioPendiente = horariosFijos.some(h => h.mostrarRecordatorio);
+
+    // Agrupadas por día, para el calendario de "tus clases este mes".
+    const citasPorDia = {};
+    todasMisCitas.forEach(c => {
+      (citasPorDia[c.fecha] = citasPorDia[c.fecha] || []).push(c);
+    });
 
     // Su progreso, más reciente primero
     const { data: progreso, error: progresoError } = await supa
@@ -610,6 +784,16 @@
       </section>
 
       <section class="block panel-tab" id="panel-horario" style="display:none;">
+        <div style="margin-bottom:28px;">
+          <h3>🗓️ Tus clases este mes</h3>
+          <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
+          <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
+          <div style="margin-top:14px;">
+            <span class="back-link" id="btn-agendar-puntual" title="Agendar una clase suelta, además de tu horario fijo">➕ Agendar una clase adicional (puntual)</span>
+            <div id="agendar-puntual-area" style="margin-top:12px; display:none;"></div>
+          </div>
+        </div>
+
         ${horariosFijos.length ? `
           <h3>📅 Tu horario fijo</h3>
           <p class="panel-sub">${horariosFijos.length === 1 ? '1 clase fija por semana.' : horariosFijos.length + ' clases fijas por semana.'}</p>
@@ -707,6 +891,9 @@
         if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); activarTabPortal(tab); }
       });
     });
+
+    construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia);
+    wireAgendarPuntual();
 
     if (horariosFijos.length) {
       horariosFijos.forEach(h => {
