@@ -168,7 +168,20 @@ exports.handler = async function (event) {
     }
 
     // 4. Crea, una por una, las próximas clases en Cal.com.
-    const primeraFecha = proximaOcurrenciaUTC(diaSemana, hora);
+    //
+    // Si el portal mandó inicioISO (la fecha exacta que la alumna clickeó
+    // en el calendario, no solo el día de la semana), la usamos tal cual
+    // como primera clase. Antes acá siempre se recalculaba "la próxima
+    // ocurrencia de ese día desde hoy" — lo cual ignoraba la fecha real
+    // elegida y podía agendar la semana equivocada (ej. alumna elige el
+    // viernes 21, pero mañana también es viernes 14, así que el sistema
+    // agendaba el 14 en vez del 21).
+    let primeraFecha = null;
+    if (body.inicioISO) {
+      const candidata = new Date(body.inicioISO);
+      if (!isNaN(candidata.getTime())) primeraFecha = candidata;
+    }
+    if (!primeraFecha) primeraFecha = proximaOcurrenciaUTC(diaSemana, hora);
     const creadas = [];
     const fallidas = [];
 
