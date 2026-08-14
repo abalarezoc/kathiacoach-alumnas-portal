@@ -97,8 +97,8 @@
               <div class="agenda-dia">
                 <div class="agenda-dia-titulo">${diaTitulo}</div>
                 ${slots.map(s => {
-                  const horaTxt = new Date(s.time).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.time}" title="Mover tu clase a este horario">${horaTxt} →</button></div>`;
+                  const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.start}" title="Mover tu clase a este horario">${horaTxt} →</button></div>`;
                 }).join('')}
               </div>
             `;
@@ -204,8 +204,8 @@
           <div class="agenda-dia">
             <div class="agenda-dia-titulo">${diaTitulo}</div>
             ${slots.map(s => {
-              const horaTxt = new Date(s.time).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-              return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.time}" title="${opciones.reemplazar ? 'Cambiar tu horario fijo a este día y hora' : 'Elegir este día y hora como tu horario fijo semanal'}">${horaTxt} →</button></div>`;
+              const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+              return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.start}" title="${opciones.reemplazar ? 'Cambiar tu horario fijo a este día y hora' : 'Elegir este día y hora como tu horario fijo semanal'}">${horaTxt} →</button></div>`;
             }).join('')}
           </div>
         `;
