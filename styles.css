@@ -259,11 +259,16 @@ table.progreso tr:last-child td { border-bottom: none; }
 /* --- Tablero del landing (tab "Inicio"): indicadores a un lado,
    calendario del mes al otro — lado a lado en pantallas anchas,
    apilado en móvil. --- */
-.dashboard-row { display: flex; gap: 24px; align-items: flex-start; flex-wrap: wrap; }
-.dashboard-indicadores { flex: 0 0 240px; }
+.dashboard-row { display: flex; gap: 24px; align-items: flex-start; }
+.dashboard-indicadores { flex: 0 0 200px; }
 .dashboard-indicadores .resumen-cards { grid-template-columns: 1fr; margin: 0; }
-.dashboard-calendario { flex: 1 1 420px; min-width: 300px; }
+.dashboard-calendario { flex: 1 1 auto; min-width: 0; }
 .dashboard-calendario .cta-agendar { margin: 0; }
+@media (max-width: 640px) {
+  .dashboard-row { flex-wrap: wrap; }
+  .dashboard-indicadores { flex-basis: 100%; }
+  .dashboard-calendario { flex-basis: 100%; }
+}
 
 /* --- Tarjetas resumen del landing (próxima clase, último peso, sesiones) --- */
 .resumen-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 14px; margin: 22px 0 30px; }
