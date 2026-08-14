@@ -115,21 +115,20 @@ exports.handler = async function (event) {
       return { statusCode: 400, body: JSON.stringify({ ok: false, mensaje: 'No se encontró tu perfil (nombre/correo).' }) };
     }
 
-    // 3. Si ya tiene un horario fijo activo, no se puede crear otro encima
-    // — salvo que venga con reemplazar:true (lo usa el aviso del portal
-    // cuando la alumna decide cambiar su horario en vez de mantenerlo).
-    // En ese caso, primero se cancela el horario viejo igual que lo haría
-    // Kathia desde "Quitar horario fijo".
-    const activoResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/horario_fijo?alumna_id=eq.${alumnaId}&activo=eq.true&select=id`,
-      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
-    );
-    const activoData = await activoResp.json();
-    if (Array.isArray(activoData) && activoData.length > 0) {
-      if (!body.reemplazar) {
-        return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Ya tienes un horario fijo activo. Si quieres cambiarlo, escríbele a Kathia.' }) };
-      }
-      for (const viejo of activoData) {
+    // 3. Una alumna puede tener más de un horario fijo a la vez (por
+    // ejemplo, lunes y viernes). Si viene reemplazar:true con un
+    // horarioFijoId puntual, se cancela SOLO ese horario viejo antes de
+    // crear el nuevo (lo usa el aviso del portal cuando decide cambiar
+    // uno de sus horarios). Si no, simplemente se agrega uno más — salvo
+    // que ya tenga exactamente ese mismo día y hora activos.
+    if (body.reemplazar && body.horarioFijoId) {
+      const viejoResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/horario_fijo?id=eq.${body.horarioFijoId}&alumna_id=eq.${alumnaId}&activo=eq.true&select=id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const viejoData = await viejoResp.json();
+      const viejo = Array.isArray(viejoData) && viejoData[0];
+      if (viejo) {
         const citasViejasResp = await fetch(
           `${SUPABASE_URL}/rest/v1/citas_fijas?horario_fijo_id=eq.${viejo.id}&estado=eq.programada&select=id,calcom_booking_uid`,
           { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
@@ -141,7 +140,7 @@ exports.handler = async function (event) {
           fetch(`https://api.cal.com/v2/bookings/${cv.calcom_booking_uid}/cancel`, {
             method: 'POST',
             headers: calcomHeaders(CALCOM_API_KEY),
-            body: JSON.stringify({ cancellationReason: 'La alumna cambió su horario fijo desde el portal.' }),
+            body: JSON.stringify({ cancellationReason: 'La alumna cambió este horario fijo desde el portal.' }),
           }).catch(() => {})
         ));
         if (citasViejas && citasViejas.length) {
@@ -156,6 +155,15 @@ exports.handler = async function (event) {
           headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ activo: false }),
         });
+      }
+    } else {
+      const dupResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/horario_fijo?alumna_id=eq.${alumnaId}&activo=eq.true&dia_semana=eq.${diaSemana}&hora=eq.${hora}&select=id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const dupData = await dupResp.json();
+      if (Array.isArray(dupData) && dupData.length > 0) {
+        return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Ya tienes un horario fijo justo en ese día y hora.' }) };
       }
     }
 
