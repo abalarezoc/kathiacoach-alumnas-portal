@@ -125,6 +125,7 @@
       nombre,
       fecha_nacimiento: nacimiento || null,
       estatura_cm: estatura ? parseFloat(estatura) : null,
+      revisada_por_kathia: false,
     }).eq('id', data.user.id);
 
     // Si puso su peso actual, queda como su primer registro de progreso
