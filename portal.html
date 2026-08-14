@@ -45,6 +45,21 @@
     return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
   }
 
+  // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de
+  // referencia OMS — informativo, no reemplaza una evaluación clínica.
+  // (Misma fórmula que usa Kathia en su panel.)
+  function imcFor(pesoKg, estaturaCm) {
+    if (pesoKg == null || !estaturaCm) return null;
+    const m = estaturaCm / 100;
+    const imc = pesoKg / (m * m);
+    let categoria;
+    if (imc < 18.5) categoria = 'Bajo peso';
+    else if (imc < 25) categoria = 'Normal';
+    else if (imc < 30) categoria = 'Sobrepeso';
+    else categoria = 'Obesidad';
+    return { valor: imc.toFixed(1), categoria };
+  }
+
   const NOMBRES_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
   function nombreDia(n) { return NOMBRES_DIA[n] || '—'; }
   function fmtHora12(horaStr) {
@@ -727,7 +742,7 @@
     // Perfil de la alumna (nombre + si es admin + meta de peso)
     const { data: perfil } = await supa
       .from('alumnas')
-      .select('nombre, es_admin, peso_objetivo')
+      .select('nombre, es_admin, peso_objetivo, estatura_cm')
       .eq('id', user.id)
       .single();
 
@@ -901,10 +916,17 @@
       }
     }
 
-    // Peso más reciente (el primer registro con peso_kg, ya que "progreso"
-    // viene ordenado del más nuevo al más viejo) — para la tarjeta resumen.
-    const registroConPeso = (progreso || []).find(p => p.peso_kg != null);
-    const ultimoPeso = registroConPeso ? registroConPeso.peso_kg : null;
+    // Peso más reciente y más antiguo (progreso viene ordenado del más
+    // nuevo al más viejo) — para la tarjeta resumen de progreso: peso
+    // actual, cuánto cambió desde el inicio, IMC y avance hacia su meta.
+    // Mismo cálculo de IMC que usa Kathia en su panel — sin fecha de
+    // nacimiento, que no corresponde mostrar acá.
+    const registrosConPeso = (progreso || []).filter(p => p.peso_kg != null);
+    const ultimoPeso = registrosConPeso.length ? registrosConPeso[0].peso_kg : null;
+    const pesoInicialReg = registrosConPeso.length ? registrosConPeso[registrosConPeso.length - 1].peso_kg : null;
+    const deltaPesoResumen = (registrosConPeso.length >= 2 && ultimoPeso != null && pesoInicialReg != null)
+      ? ultimoPeso - pesoInicialReg : null;
+    const imcResumen = imcFor(ultimoPeso, perfil && perfil.estatura_cm);
 
     // Cuántas de sus citas (fijas o puntuales) caen este mes — para la
     // tercera tarjeta resumen.
@@ -925,10 +947,17 @@
             ? `${fmtFecha(proximaCitaGeneral.fecha, { conDia: true })}<br>${fmtHora12(proximaCitaGeneral.hora)}`
             : 'Aún no tienes una clase fija agendada'}</div>
         </div>
-        <div class="resumen-card" id="resumen-peso" role="button" tabindex="0" title="Ver tu progreso completo">
-          <div class="resumen-icon">⚖️</div>
-          <div class="resumen-label">Último peso registrado</div>
+        <div class="resumen-card" id="resumen-progreso" role="button" tabindex="0" title="Ver tu progreso completo">
+          <div class="resumen-icon">📊</div>
+          <div class="resumen-label">Tu progreso</div>
           <div class="resumen-valor">${ultimoPeso != null ? `${ultimoPeso} kg` : 'Sin registros aún'}</div>
+          ${(deltaPesoResumen != null || imcResumen || (perfil && perfil.peso_objetivo != null && ultimoPeso != null)) ? `
+            <div class="resumen-detalle">
+              ${deltaPesoResumen != null ? `<div>${deltaPesoResumen <= 0 ? '↓' : '↑'} ${Math.abs(deltaPesoResumen).toFixed(1)} kg desde tu inicio</div>` : ''}
+              ${imcResumen ? `<div>IMC ${imcResumen.valor} · ${imcResumen.categoria}</div>` : ''}
+              ${(perfil && perfil.peso_objetivo != null && ultimoPeso != null) ? `<div>${Math.abs(ultimoPeso - perfil.peso_objetivo) < 0.5 ? '🎯 Meta lograda' : `Meta: faltan ${Math.abs(ultimoPeso - perfil.peso_objetivo).toFixed(1)} kg`}</div>` : ''}
+            </div>
+          ` : ''}
         </div>
         <div class="resumen-card" id="resumen-clases-mes" role="button" tabindex="0" title="Ver tus clases del mes">
           <div class="resumen-icon">📆</div>
@@ -1054,7 +1083,7 @@
 
     // Las tarjetas resumen del landing también llevan a su pestaña —
     // click o Enter/Espacio (son role="button").
-    [['resumen-proxima', 'horario'], ['resumen-peso', 'progreso'], ['resumen-clases-mes', 'horario']].forEach(([id, tab]) => {
+    [['resumen-proxima', 'horario'], ['resumen-progreso', 'progreso'], ['resumen-clases-mes', 'horario']].forEach(([id, tab]) => {
       const card = document.getElementById(id);
       if (!card) return;
       card.addEventListener('click', () => activarTabPortal(tab));
