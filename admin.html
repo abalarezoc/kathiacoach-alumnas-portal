@@ -148,14 +148,20 @@
       if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
     });
 
-    // Horario fijo activo de cada alumna (si ya eligió uno), para mostrarlo
-    // directo en su tarjeta sin tener que entrar a su ficha.
+    // Horario(s) fijo(s) activos de cada alumna (puede tener más de uno,
+    // ej. lunes y viernes), para mostrarlos directo en su tarjeta sin
+    // tener que entrar a su ficha.
     const { data: horariosTodo } = await supa
       .from('horario_fijo')
       .select('alumna_id, dia_semana, hora')
-      .eq('activo', true);
-    const horarioPorAlumna = {};
-    (horariosTodo || []).forEach(h => { horarioPorAlumna[h.alumna_id] = h; });
+      .eq('activo', true)
+      .order('dia_semana', { ascending: true })
+      .order('hora', { ascending: true });
+    const horariosPorAlumna = {};
+    (horariosTodo || []).forEach(h => {
+      if (!horariosPorAlumna[h.alumna_id]) horariosPorAlumna[h.alumna_id] = [];
+      horariosPorAlumna[h.alumna_id].push(h);
+    });
 
     alumnasCache = alumnas.map(a => ({
       ...a,
@@ -163,7 +169,7 @@
       ultima: resumen[a.id] ? resumen[a.id].ultima : null,
       ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
-      horarioFijo: horarioPorAlumna[a.id] || null,
+      horariosFijos: horariosPorAlumna[a.id] || [],
     }));
 
     // Puntito con número en "Alumnas" para las que Kathia todavía no revisó
@@ -350,11 +356,12 @@
   // Conecta los botones "Reagendar" y "Cancelar" del horario fijo de una
   // alumna, desde el panel de Kathia. A diferencia del portal de la
   // alumna, aquí no hay límite de anticipación ni aviso de cobro — es
-  // Kathia manejando su propia agenda.
-  function wireHorarioFijoBotonesAdmin(cita, alumnaId) {
-    const btnReagendar = document.getElementById('hf-admin-reagendar');
-    const btnCancelar = document.getElementById('hf-admin-cancelar');
-    const area = document.getElementById('hf-admin-reagendar-area');
+  // Kathia manejando su propia agenda. Se llama una vez por cada horario
+  // fijo que tenga la alumna, así que los ids van con sufijo -${horarioFijoId}.
+  function wireHorarioFijoBotonesAdmin(cita, alumnaId, horarioFijoId) {
+    const btnReagendar = document.getElementById(`hf-admin-reagendar-${horarioFijoId}`);
+    const btnCancelar = document.getElementById(`hf-admin-cancelar-${horarioFijoId}`);
+    const area = document.getElementById(`hf-admin-reagendar-area-${horarioFijoId}`);
 
     if (btnReagendar) {
       btnReagendar.addEventListener('click', async () => {
@@ -576,8 +583,8 @@
         edadHTML = `<div class="card-meta">${edad} años · cumple ${fmtDiaMes(a.fecha_nacimiento)}${aviso}</div>`;
       }
 
-      const horarioHTML = a.horarioFijo
-        ? `<div class="card-meta">📅 ${nombreDia(a.horarioFijo.dia_semana)} ${fmtHora12(a.horarioFijo.hora)}</div>`
+      const horarioHTML = (a.horariosFijos && a.horariosFijos.length)
+        ? `<div class="card-meta">📅 ${a.horariosFijos.map(h => `${nombreDia(h.dia_semana)} ${fmtHora12(h.hora)}`).join(' · ')}</div>`
         : `<div class="card-meta">📅 Sin horario fijo aún</div>`;
 
       return `
@@ -693,26 +700,27 @@
     editingId = null;
     animoSeleccionado = null;
 
-    // Horario fijo (si ya tiene uno asignado) y su próxima clase.
+    // Horario(s) fijo(s) de esta alumna (puede tener más de uno) y la
+    // próxima clase de cada uno.
     const { data: horarios } = await supa
       .from('horario_fijo')
       .select('id, dia_semana, hora, proxima_confirmacion')
       .eq('alumna_id', id)
       .eq('activo', true)
-      .order('creado_en', { ascending: false })
-      .limit(1);
-    const horarioActual = (horarios && horarios[0]) || null;
-    let proximaCita = null;
-    if (horarioActual) {
+      .order('dia_semana', { ascending: true })
+      .order('hora', { ascending: true });
+    const horariosFijos = horarios || [];
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    for (const h of horariosFijos) {
       const { data: citas } = await supa
         .from('citas_fijas')
         .select('id, fecha, hora')
-        .eq('horario_fijo_id', horarioActual.id)
+        .eq('horario_fijo_id', h.id)
         .eq('estado', 'programada')
-        .gte('fecha', new Date().toISOString().slice(0, 10))
+        .gte('fecha', hoyStr)
         .order('fecha', { ascending: true })
         .limit(1);
-      proximaCita = (citas && citas[0]) || null;
+      h.proximaCita = (citas && citas[0]) || null;
     }
 
     const filas = (progreso || []).map(p => `
@@ -777,24 +785,30 @@
       })()}
 
       <div class="entry-form" style="margin-bottom:20px;">
-        <h3 style="margin-bottom:8px;">Horario fijo de clases</h3>
-        ${horarioActual ? `
-          <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
-            <div>
-              <strong style="color:var(--texto);">${nombreDia(horarioActual.dia_semana)} a las ${fmtHora12(horarioActual.hora)}</strong>
-              <div class="card-meta" style="margin-top:4px;">${proximaCita ? `Próxima clase: ${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}` : 'No hay próximas clases programadas (revisa Cal.com).'}</div>
-              ${horarioActual.proxima_confirmacion ? `<div class="card-meta" style="margin-top:2px;">Próximo recordatorio para ella: ${fmtFecha(horarioActual.proxima_confirmacion)}</div>` : ''}
-            </div>
-            <span class="back-link back-link-danger" id="quitar-horario-btn">Quitar horario fijo</span>
+        <h3 style="margin-bottom:8px;">${horariosFijos.length > 1 ? 'Horarios fijos de clases' : 'Horario fijo de clases'}</h3>
+        ${horariosFijos.length ? `
+          <div class="horarios-lista">
+            ${horariosFijos.map(h => `
+              <div class="horario-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <strong style="color:var(--texto);">${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}</strong>
+                    <div class="card-meta" style="margin-top:4px;">${h.proximaCita ? `Próxima clase: ${fmtFecha(h.proximaCita.fecha)} · ${fmtHora12(h.proximaCita.hora)}` : 'No hay próximas clases programadas (revisa Cal.com).'}</div>
+                    ${h.proxima_confirmacion ? `<div class="card-meta" style="margin-top:2px;">Próximo recordatorio para ella: ${fmtFecha(h.proxima_confirmacion)}</div>` : ''}
+                  </div>
+                  <span class="back-link back-link-danger" id="quitar-horario-btn-${h.id}">Quitar este horario</span>
+                </div>
+                ${h.proximaCita ? `
+                  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+                    <button class="btn-sm" type="button" id="hf-admin-reagendar-${h.id}">Reagendar</button>
+                    <button class="btn-sm btn-sm-danger" type="button" id="hf-admin-cancelar-${h.id}">Cancelar esta clase</button>
+                  </div>
+                  <div id="hf-admin-reagendar-area-${h.id}" style="margin-top:12px;"></div>
+                ` : ''}
+              </div>
+            `).join('')}
           </div>
-          ${proximaCita ? `
-            <div style="display:flex; gap:12px; flex-wrap:wrap; margin-top:14px;">
-              <button class="btn-primary" type="button" id="hf-admin-reagendar">Reagendar</button>
-              <button class="btn-danger" type="button" id="hf-admin-cancelar">Cancelar esta clase</button>
-            </div>
-            <p class="input-hint" style="margin-top:10px;">Como administradora, puedes reagendar o cancelar sin restricciones — el aviso de cobro por cancelar el mismo día solo aplica cuando lo hace la alumna.</p>
-            <div id="hf-admin-reagendar-area" style="margin-top:14px;"></div>
-          ` : ''}
+          <p class="input-hint" style="margin-top:12px;">Como administradora, puedes reagendar o cancelar sin restricciones — el aviso de cobro por cancelar el mismo día solo aplica cuando lo hace la alumna.</p>
         ` : `
           <p class="greeting-sub" style="margin:0;">Esta alumna todavía no eligió su horario fijo. Ella lo hace desde su propio portal, escogiendo uno de los horarios que tienes libres — en cuanto lo elija, aparecerá aquí.</p>
         `}
@@ -868,29 +882,28 @@
       window.abrirAlumna(id);
     });
 
-    if (horarioActual && proximaCita) {
-      wireHorarioFijoBotonesAdmin(proximaCita, id);
-    }
-
-    const quitarHorarioBtn = document.getElementById('quitar-horario-btn');
-    if (quitarHorarioBtn) {
-      quitarHorarioBtn.addEventListener('click', async () => {
-        if (!confirm('¿Quitar el horario fijo? Se cancelan sus próximas clases automáticas en Cal.com y vuelve a agendar libremente en el calendario abierto.')) return;
-        try {
-          const { data: { session } } = await supa.auth.getSession();
-          const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
-            method: 'POST',
-            headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-            body: JSON.stringify({ horarioFijoId: horarioActual.id }),
-          });
-          const resultado = await resp.json();
-          if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
-          window.abrirAlumna(id);
-        } catch (err) {
-          alert('No se pudo quitar: ' + err.message);
-        }
-      });
-    }
+    horariosFijos.forEach(h => {
+      if (h.proximaCita) wireHorarioFijoBotonesAdmin(h.proximaCita, id, h.id);
+      const quitarHorarioBtn = document.getElementById(`quitar-horario-btn-${h.id}`);
+      if (quitarHorarioBtn) {
+        quitarHorarioBtn.addEventListener('click', async () => {
+          if (!confirm(`¿Quitar el horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}? Se cancelan sus próximas clases automáticas en Cal.com para ese horario.`)) return;
+          try {
+            const { data: { session } } = await supa.auth.getSession();
+            const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+              body: JSON.stringify({ horarioFijoId: h.id }),
+            });
+            const resultado = await resp.json();
+            if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
+            window.abrirAlumna(id);
+          } catch (err) {
+            alert('No se pudo quitar: ' + err.message);
+          }
+        });
+      }
+    });
 
     document.querySelectorAll('.animo-btn').forEach(btn => {
       btn.addEventListener('click', () => {
