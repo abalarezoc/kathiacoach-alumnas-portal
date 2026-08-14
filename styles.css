@@ -202,7 +202,15 @@ table.progreso tr:last-child td { border-bottom: none; }
 
 /* Calendario de mes para elegir/cambiar horario y reagendar: navegar por
    mes, ver de un vistazo qué días tienen cupo, y elegir la hora abajo. */
-.cal-widget { max-width: 340px; background: #fff; border: 1px solid var(--linea); padding: 14px 16px 16px; }
+.cal-widget {
+  max-width: 560px; background: #fff; border: 1px solid var(--linea); padding: 16px 18px;
+  display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start;
+}
+.cal-mes-col { flex: 0 0 240px; width: 240px; }
+.cal-horas-col { flex: 1 1 190px; min-width: 170px; border-left: 1px solid var(--linea); padding-left: 22px; }
+@media (max-width: 480px) {
+  .cal-horas-col { border-left: none; padding-left: 0; margin-top: 8px; }
+}
 .cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
 .cal-mes-titulo { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 600; text-transform: capitalize; }
 .cal-nav {

@@ -104,14 +104,16 @@
 
       area.innerHTML = `
         <div class="cal-widget">
-          <div class="cal-header">
-            <button type="button" class="cal-nav" id="cal-prev" title="Mes anterior"${puedeAnterior ? '' : ' disabled'}>‹</button>
-            <div class="cal-mes-titulo">${nombreMes}</div>
-            <button type="button" class="cal-nav" id="cal-next" title="Mes siguiente"${puedeSiguiente ? '' : ' disabled'}>›</button>
+          <div class="cal-mes-col">
+            <div class="cal-header">
+              <button type="button" class="cal-nav" id="cal-prev" title="Mes anterior"${puedeAnterior ? '' : ' disabled'}>‹</button>
+              <div class="cal-mes-titulo">${nombreMes}</div>
+              <button type="button" class="cal-nav" id="cal-next" title="Mes siguiente"${puedeSiguiente ? '' : ' disabled'}>›</button>
+            </div>
+            <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+            <div class="cal-celdas">${celdas}</div>
           </div>
-          <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
-          <div class="cal-celdas">${celdas}</div>
-          <div id="cal-horas-wrap"></div>
+          <div class="cal-horas-col" id="cal-horas-wrap"></div>
         </div>
       `;
 
