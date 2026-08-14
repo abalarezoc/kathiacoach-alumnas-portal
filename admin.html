@@ -285,8 +285,8 @@
               <div class="agenda-dia">
                 <div class="agenda-dia-titulo">${diaTitulo}</div>
                 ${slots.map(s => {
-                  const horaTxt = new Date(s.time).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.time}">${horaTxt} →</button></div>`;
+                  const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.start}">${horaTxt} →</button></div>`;
                 }).join('')}
               </div>
             `;
