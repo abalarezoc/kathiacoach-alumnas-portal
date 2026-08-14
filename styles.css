@@ -231,6 +231,36 @@ table.progreso tr:last-child td { border-bottom: none; }
 .cal-celda-activa .cal-punto { background: #fff; }
 .cal-horas-titulo { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--texto); margin-bottom: 12px; text-transform: capitalize; }
 
+/* Vista de semana del horario fijo: los 7 días de un vistazo, con el
+   día de clase resaltado — así el horario es lo más visible del panel,
+   y las acciones (reagendar, cancelar) quedan como algo secundario. */
+.semana-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 4px; }
+.semana-dia {
+  background: var(--crema); border: 1px solid var(--linea); border-radius: 8px;
+  padding: 10px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px;
+}
+.semana-dia-letra { font-size: 11px; font-weight: 600; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .02em; }
+.semana-dia-hora { font-size: 10.5px; font-weight: 600; color: #fff; white-space: nowrap; }
+.semana-dia-activo { background: var(--acento); border-color: var(--acento); }
+.semana-dia-activo .semana-dia-letra { color: #fff; }
+.semana-proxima {
+  display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--texto);
+  background: var(--acento-suave); border-radius: 8px; padding: 11px 14px; margin-top: 14px;
+}
+
+/* Botones secundarios (reagendar / cancelar una clase): no deben pesar
+   visualmente más que el horario en sí, así que van chicos y con
+   contorno en vez del botón grande y sólido de .btn-primary/.btn-danger. */
+.btn-sm {
+  display: inline-flex; align-items: center; gap: 6px; width: auto;
+  padding: 9px 16px; border-radius: 2px; border: 1px solid var(--linea); background: #fff;
+  color: var(--texto); font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13.5px; cursor: pointer;
+}
+.btn-sm:hover { border-color: var(--acento); color: var(--acento); }
+.btn-sm:disabled { opacity: .5; cursor: default; }
+.btn-sm-danger { color: #A13A3A; }
+.btn-sm-danger:hover { border-color: #C0392B; color: #C0392B; }
+
 /* --- Modal de confirmación: eliminar o archivar alumna --- */
 .modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.55);

@@ -563,6 +563,19 @@
         ${horarioFijo ? `
           <h3>📅 Tu horario fijo</h3>
           <p class="panel-sub">${nombreDia(horarioFijo.dia_semana)} a las ${fmtHora12(horarioFijo.hora)}, cada semana.</p>
+          <div class="semana-strip">
+            ${[0, 1, 2, 3, 4, 5, 6].map(d => {
+              const activo = d === horarioFijo.dia_semana;
+              const letras = ['D', 'L', 'M', 'M', 'J', 'V', 'S'];
+              return `
+                <div class="semana-dia${activo ? ' semana-dia-activo' : ''}">
+                  <span class="semana-dia-letra">${letras[d]}</span>
+                  ${activo ? `<span class="semana-dia-hora">${fmtHora12(horarioFijo.hora)}</span>` : ''}
+                </div>
+              `;
+            }).join('')}
+          </div>
+          ${proximaCita ? `<div class="semana-proxima">🗓️ <strong>Tu próxima cita es:</strong>&nbsp;${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}</div>` : ''}
           ${mostrarRecordatorio ? `
             <div class="meta-box" style="margin-bottom:16px;">
               <div>🔔 Tu horario sigue siendo <strong>${nombreDia(horarioFijo.dia_semana)} a las ${fmtHora12(horarioFijo.hora)}</strong>. ¿Todo bien o prefieres cambiar?</div>
@@ -585,17 +598,14 @@
             <div id="cambiar-horario-area" style="margin-bottom:16px; display:none;"></div>
           ` : ''}
           ${proximaCita ? `
-            <div class="agenda-item" style="margin-bottom:16px;">
-              <span class="agenda-alumna">🗓️ <strong>Tu próxima cita es:</strong> ${fmtFecha(proximaCita.fecha)} · ${fmtHora12(proximaCita.hora)}</span>
-            </div>
-            <div style="display:flex; gap:12px; flex-wrap:wrap;">
-              <button class="btn-primary" type="button" id="btn-reagendar" title="Mover tu próxima clase a otro horario libre (hasta 1 día antes)">↻ Reagendar</button>
-              <button class="btn-danger" type="button" id="btn-cancelar-emergencia" title="Cancelar tu próxima clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
+            <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:18px;">
+              <button class="btn-sm" type="button" id="btn-reagendar" title="Mover tu próxima clase a otro horario libre (hasta 1 día antes)">↻ Reagendar</button>
+              <button class="btn-sm btn-sm-danger" type="button" id="btn-cancelar-emergencia" title="Cancelar tu próxima clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
             </div>
             <p class="input-hint" style="margin-top:10px;">Puedes reagendar hasta 1 día antes de tu clase. Las cancelaciones de emergencia se aceptan siempre, pero si cancelas el mismo día, la sesión se cobra igual.</p>
             <div id="reagendar-area" style="margin-top:14px;"></div>
-          ` : `<div class="empty-state">No tienes próximas clases programadas. Escríbele a Kathia si crees que falta agendar algo.</div>`}
-          <div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--linea);">
+          ` : `<div class="empty-state" style="margin-top:18px;">No tienes próximas clases programadas. Escríbele a Kathia si crees que falta agendar algo.</div>`}
+          <div style="margin-top:20px; padding-top:14px; border-top:1px solid var(--linea);">
             <span class="back-link back-link-danger" id="btn-cancelar-serie" title="Deja de tener clase fija cada semana — se cancelan todas tus próximas clases automáticas">🛑 Cancelar todo mi horario fijo (todas las semanas)</span>
             <div id="cancelar-serie-area" style="margin-top:12px;"></div>
           </div>
