@@ -116,11 +116,13 @@ exports.handler = async function (event) {
     }
 
     // 3. Una alumna puede tener más de un horario fijo a la vez (por
-    // ejemplo, lunes y viernes). Si viene reemplazar:true con un
+    // ejemplo, lunes y viernes), pero solo UNO por día — no tiene sentido
+    // tener dos sesiones el mismo día. Si viene reemplazar:true con un
     // horarioFijoId puntual, se cancela SOLO ese horario viejo antes de
     // crear el nuevo (lo usa el aviso del portal cuando decide cambiar
     // uno de sus horarios). Si no, simplemente se agrega uno más — salvo
-    // que ya tenga exactamente ese mismo día y hora activos.
+    // que ya tenga algún horario activo ese mismo día de la semana.
+    let viejoIdExcluir = null;
     if (body.reemplazar && body.horarioFijoId) {
       const viejoResp = await fetch(
         `${SUPABASE_URL}/rest/v1/horario_fijo?id=eq.${body.horarioFijoId}&alumna_id=eq.${alumnaId}&activo=eq.true&select=id`,
@@ -128,6 +130,26 @@ exports.handler = async function (event) {
       );
       const viejoData = await viejoResp.json();
       const viejo = Array.isArray(viejoData) && viejoData[0];
+      if (viejo) viejoIdExcluir = viejo.id;
+    }
+
+    // Chequeo de "un solo horario por día" — aplica tanto al agregar uno
+    // nuevo como al reemplazar (en ese caso, sin contar el que se va a
+    // reemplazar, porque ese cae justo en el mismo día que sí se permite).
+    {
+      const dupResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/horario_fijo?alumna_id=eq.${alumnaId}&activo=eq.true&dia_semana=eq.${diaSemana}&select=id`,
+        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+      );
+      const dupData = await dupResp.json();
+      const choca = Array.isArray(dupData) && dupData.some(h => h.id !== viejoIdExcluir);
+      if (choca) {
+        return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Ya tienes un horario fijo ese día. Solo puedes tener una clase fija por día — cancela o cambia la que ya tienes antes de agregar otra ese mismo día.' }) };
+      }
+    }
+
+    if (body.reemplazar && body.horarioFijoId) {
+      const viejo = viejoIdExcluir ? { id: viejoIdExcluir } : null;
       if (viejo) {
         const citasViejasResp = await fetch(
           `${SUPABASE_URL}/rest/v1/citas_fijas?horario_fijo_id=eq.${viejo.id}&estado=eq.programada&select=id,calcom_booking_uid`,
@@ -155,15 +177,6 @@ exports.handler = async function (event) {
           headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
           body: JSON.stringify({ activo: false }),
         });
-      }
-    } else {
-      const dupResp = await fetch(
-        `${SUPABASE_URL}/rest/v1/horario_fijo?alumna_id=eq.${alumnaId}&activo=eq.true&dia_semana=eq.${diaSemana}&hora=eq.${hora}&select=id`,
-        { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
-      );
-      const dupData = await dupResp.json();
-      if (Array.isArray(dupData) && dupData.length > 0) {
-        return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Ya tienes un horario fijo justo en ese día y hora.' }) };
       }
     }
 
