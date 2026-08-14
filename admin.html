@@ -277,20 +277,22 @@
             area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora.</div>`;
             return;
           }
-          area.innerHTML = dias.map(dia => {
+          area.innerHTML = `<div class="slots-wrap">${dias.map(dia => {
             const fechaObj = new Date(dia + 'T00:00:00');
             const diaTitulo = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
             const slots = data.slots[dia] || [];
             return `
-              <div class="agenda-dia">
-                <div class="agenda-dia-titulo">${diaTitulo}</div>
-                ${slots.map(s => {
-                  const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
-                  return `<div class="agenda-item"><button class="back-link" type="button" data-time="${s.start}">${horaTxt} →</button></div>`;
-                }).join('')}
+              <div class="slots-dia">
+                <div class="slots-dia-titulo"><span class="dia-icono">📆</span>${diaTitulo}</div>
+                <div class="slots-grid">
+                  ${slots.map(s => {
+                    const horaTxt = new Date(s.start).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+                    return `<button class="slot-chip" type="button" data-time="${s.start}">🕐 ${horaTxt}</button>`;
+                  }).join('')}
+                </div>
               </div>
             `;
-          }).join('');
+          }).join('')}</div>`;
           area.querySelectorAll('button[data-time]').forEach(b => {
             b.addEventListener('click', async () => {
               b.disabled = true;

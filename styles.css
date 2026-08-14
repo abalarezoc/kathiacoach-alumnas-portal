@@ -179,6 +179,27 @@ table.progreso tr:last-child td { border-bottom: none; }
 .back-link-danger { color: #A13A3A; }
 .back-link-danger:hover { color: #C0392B; }
 
+/* Selector de horarios libres (elegir/cambiar horario fijo, reagendar):
+   tarjetas por día con los horarios como chips en grilla, en vez de una
+   lista larga de links uno debajo del otro. */
+.slots-wrap { display: flex; flex-direction: column; gap: 16px; }
+.slots-dia { background: #fff; border: 1px solid var(--linea); padding: 18px 20px; animation: fadeUp .3s ease backwards; }
+.slots-dia-titulo {
+  display: flex; align-items: center; gap: 8px; font-family: 'Playfair Display', serif;
+  font-size: 15.5px; font-weight: 600; margin-bottom: 14px; text-transform: capitalize;
+}
+.slots-dia-titulo .dia-icono { font-size: 15px; }
+.slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(92px, 1fr)); gap: 10px; }
+.slot-chip {
+  background: var(--crema); border: 1px solid var(--linea); border-radius: 999px;
+  padding: 10px 6px; text-align: center; font-size: 13.5px; font-weight: 600; color: var(--texto);
+  cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
+  font-family: 'Inter', sans-serif;
+}
+.slot-chip:hover { background: var(--acento-suave); border-color: var(--acento); color: var(--acento); }
+.slot-chip:active { transform: scale(.97); }
+.slot-chip:disabled { opacity: .55; cursor: default; transform: none; }
+
 /* --- Modal de confirmación: eliminar o archivar alumna --- */
 .modal-overlay {
   display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.55);
