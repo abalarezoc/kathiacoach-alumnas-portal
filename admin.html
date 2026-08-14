@@ -20,7 +20,7 @@
       <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
       <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
       <button class="logout-btn" onclick="renderGrid()">📊 Alumnas<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
-      <a href="https://app.cal.com/bookings/upcoming" target="_blank" rel="noopener" class="logout-btn" style="text-decoration:none;">📅 Agenda</a>
+      <button class="logout-btn" onclick="renderAgendaCalendario()">📅 Agenda</button>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
       <button class="logout-btn" onclick="renderArchivadas()" title="Alumnas archivadas" style="margin-left:6px;">🗄️</button>
     </div>
@@ -57,7 +57,7 @@
   let currentProgreso = [];
   let editingId = null;
   let animoSeleccionado = null;
-  let vistaActual = 'agenda'; // 'agenda' | 'grid' | 'detalle'
+  let vistaActual = 'agenda'; // 'agenda' | 'agenda-calendario' | 'grid' | 'detalle'
   let vistaAnterior = 'agenda'; // a dónde vuelve el "← Volver" desde el detalle de una alumna
   let citasCache = { loading: true, configurado: null, error: false, mensaje: '', citas: [] };
   const ICONOS_ANIMO = ['💪', '🔥', '👏', '🌟', '❤️', '🎉'];
@@ -201,6 +201,7 @@
       await cargarAlumnas();
       if (vistaActual === 'grid') renderGrid();
       else if (vistaActual === 'agenda') renderAgenda();
+      else if (vistaActual === 'agenda-calendario') renderAgendaCalendario();
       refrescando = false;
     }
     window.addEventListener('focus', alVolverFoco);
@@ -360,10 +361,12 @@
   // alumna, aquí no hay límite de anticipación ni aviso de cobro — es
   // Kathia manejando su propia agenda. Se llama una vez por cada horario
   // fijo que tenga la alumna, así que los ids van con sufijo -${horarioFijoId}.
-  function wireHorarioFijoBotonesAdmin(cita, alumnaId, horarioFijoId) {
-    const btnReagendar = document.getElementById(`hf-admin-reagendar-${horarioFijoId}`);
-    const btnCancelar = document.getElementById(`hf-admin-cancelar-${horarioFijoId}`);
-    const area = document.getElementById(`hf-admin-reagendar-area-${horarioFijoId}`);
+  function wireHorarioFijoBotonesAdmin(cita, alumnaId, horarioFijoId, idSuffix, onSuccess) {
+    const suf = idSuffix != null ? idSuffix : horarioFijoId;
+    const alFinalizar = onSuccess || (() => window.abrirAlumna(alumnaId));
+    const btnReagendar = document.getElementById(`hf-admin-reagendar-${suf}`);
+    const btnCancelar = document.getElementById(`hf-admin-cancelar-${suf}`);
+    const area = document.getElementById(`hf-admin-reagendar-area-${suf}`);
 
     if (btnReagendar) {
       btnReagendar.addEventListener('click', async () => {
@@ -393,7 +396,7 @@
                 b.textContent = original;
                 return;
               }
-              window.abrirAlumna(alumnaId);
+              alFinalizar();
             } catch (err) {
               alert('No se pudo reagendar: ' + err.message);
               b.disabled = false;
@@ -418,12 +421,191 @@
           });
           const resultado = await resp.json();
           if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
-          window.abrirAlumna(alumnaId);
+          alFinalizar();
         } catch (err) {
           alert('No se pudo cancelar: ' + err.message);
         }
       });
     }
+  }
+
+  // Calendario de mes con TODAS las clases de TODAS las alumnas — la
+  // "Agenda" de Kathia, para que se quede en el portal en vez de salir a
+  // Cal.com. Mismo look que el calendario de "Tus clases este mes" de
+  // cada alumna: días marcados, clic para ver el detalle de ese día. Ahí
+  // aparece cada clase con el nombre de la alumna y las mismas 3
+  // acciones que ya tiene en su ficha: reagendar, cancelar esa clase, o
+  // cancelar el horario fijo completo.
+  function construirCalendarioAgenda(area, citasPorDia) {
+    const dias = Object.keys(citasPorDia).sort();
+    const hoyLima = new Date(Date.now() - 5 * 3600000);
+    const hoyStr = hoyLima.toISOString().slice(0, 10);
+    let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
+    let diaSeleccionado = dias.length ? dias[0] : hoyStr;
+    const pad = (n) => String(n).padStart(2, '0');
+
+    function render() {
+      const primerDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1);
+      const ultimoDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 0);
+      const offset = primerDiaMes.getDay();
+      const filas = Math.ceil((offset + ultimoDiaMes.getDate()) / 7);
+      const nombreMes = mesActual.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+      let celdas = '';
+      for (let i = 0; i < filas * 7; i++) {
+        const numDia = i - offset + 1;
+        if (numDia < 1 || numDia > ultimoDiaMes.getDate()) {
+          celdas += `<div class="cal-celda cal-celda-vacia"></div>`;
+          continue;
+        }
+        const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
+        const tieneCitas = !!(citasPorDia[fechaStr] && citasPorDia[fechaStr].length);
+        const clases = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
+      }
+
+      area.innerHTML = `
+        <div class="cal-widget">
+          <div class="cal-mes-col">
+            <div class="cal-header">
+              <button type="button" class="cal-nav" id="ag-prev" title="Mes anterior">‹</button>
+              <div class="cal-mes-titulo">${nombreMes}</div>
+              <button type="button" class="cal-nav" id="ag-next" title="Mes siguiente">›</button>
+            </div>
+            <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+            <div class="cal-celdas">${celdas}</div>
+          </div>
+          <div class="cal-horas-col" id="ag-detalle-wrap"></div>
+        </div>
+      `;
+
+      area.querySelector('#ag-prev').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() - 1, 1); render(); });
+      area.querySelector('#ag-next').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 1); render(); });
+      area.querySelectorAll('button[data-fecha]:not(:disabled)').forEach(b => {
+        b.addEventListener('click', () => { diaSeleccionado = b.dataset.fecha; render(); });
+      });
+
+      renderDetalle();
+    }
+
+    function renderDetalle() {
+      const wrap = area.querySelector('#ag-detalle-wrap');
+      if (!wrap) return;
+      const citas = citasPorDia[diaSeleccionado] || [];
+      const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
+      const tituloDia = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+      if (!citas.length) {
+        wrap.innerHTML = `<div class="cal-horas-titulo">🕐 ${tituloDia}</div><div class="empty-state">No hay clases ese día.</div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
+        <div class="horarios-lista">
+          ${citas.map(c => `
+            <div class="horario-card">
+              <strong style="color:var(--texto);">${c.nombreAlumna}</strong>
+              <div class="card-meta" style="margin-top:2px;">${fmtHora12(c.hora)} · ${c.horario_fijo_id != null ? 'Horario fijo' : 'Clase puntual'}</div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                ${c.horario_fijo_id != null ? `
+                  <button class="btn-sm" type="button" id="hf-admin-reagendar-${c.id}">Reagendar</button>
+                  <button class="btn-sm btn-sm-danger" type="button" id="hf-admin-cancelar-${c.id}">Cancelar esta clase</button>
+                  <span class="back-link back-link-danger" id="ag-cancelar-serie-${c.id}">Cancelar horario fijo</span>
+                ` : `
+                  <button class="btn-sm btn-sm-danger" type="button" id="ag-cancelar-puntual-${c.id}">Cancelar esta clase</button>
+                `}
+              </div>
+              <div id="hf-admin-reagendar-area-${c.id}" style="margin-top:10px;"></div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      citas.forEach(c => {
+        if (c.horario_fijo_id != null) {
+          wireHorarioFijoBotonesAdmin({ id: c.id }, c.alumna_id, c.horario_fijo_id, c.id, () => renderAgendaCalendario());
+          const btnSerie = document.getElementById(`ag-cancelar-serie-${c.id}`);
+          if (btnSerie) {
+            btnSerie.addEventListener('click', async () => {
+              if (!confirm(`¿Cancelar el horario fijo completo de ${c.nombreAlumna}? Se cancelan sus próximas clases automáticas en Cal.com para ese horario.`)) return;
+              try {
+                const { data: { session } } = await supa.auth.getSession();
+                const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ horarioFijoId: c.horario_fijo_id }),
+                });
+                const resultado = await resp.json();
+                if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
+                renderAgendaCalendario();
+              } catch (err) {
+                alert('No se pudo quitar: ' + err.message);
+              }
+            });
+          }
+        } else {
+          const btnCancelarPuntual = document.getElementById(`ag-cancelar-puntual-${c.id}`);
+          if (btnCancelarPuntual) {
+            btnCancelarPuntual.addEventListener('click', async () => {
+              if (!confirm(`¿Cancelar la clase adicional de ${c.nombreAlumna}?`)) return;
+              try {
+                const { data: { session } } = await supa.auth.getSession();
+                const resp = await fetch('/.netlify/functions/admin-cancelar-cita', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ citaId: c.id }),
+                });
+                const resultado = await resp.json();
+                if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
+                renderAgendaCalendario();
+              } catch (err) {
+                alert('No se pudo cancelar: ' + err.message);
+              }
+            });
+          }
+        }
+      });
+    }
+
+    render();
+  }
+
+  // Vista "Agenda": todas las clases de todas las alumnas, en un
+  // calendario de mes — se queda en el portal, sin salir a Cal.com.
+  async function renderAgendaCalendario() {
+    vistaActual = 'agenda-calendario';
+    contentEl.innerHTML = `
+      <h1 class="greeting">Agenda</h1>
+      <p class="greeting-sub">Todas las clases programadas de tus alumnas — de un vistazo, sin salir a Cal.com. Haz clic en un día para ver el detalle y reagendar o cancelar.</p>
+      <div id="agenda-cal-area"><div class="loading">Cargando tu agenda...</div></div>
+    `;
+
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    const { data: citasTodas, error } = await supa
+      .from('citas_fijas')
+      .select('id, fecha, hora, horario_fijo_id, alumna_id')
+      .eq('estado', 'programada')
+      .gte('fecha', hoyStr)
+      .order('fecha', { ascending: true })
+      .order('hora', { ascending: true });
+
+    const area = document.getElementById('agenda-cal-area');
+    if (error) {
+      area.innerHTML = `<div class="empty-state">No se pudo cargar la agenda.</div>`;
+      return;
+    }
+
+    const nombrePorAlumna = {};
+    alumnasCache.forEach(a => { nombrePorAlumna[a.id] = a.nombre || a.email; });
+
+    const citasPorDia = {};
+    (citasTodas || []).forEach(c => {
+      const nombreAlumna = nombrePorAlumna[c.alumna_id] || 'Alumna';
+      (citasPorDia[c.fecha] = citasPorDia[c.fecha] || []).push({ ...c, nombreAlumna });
+    });
+
+    construirCalendarioAgenda(area, citasPorDia);
   }
 
   // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de referencia OMS —
