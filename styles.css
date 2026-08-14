@@ -202,23 +202,23 @@ table.progreso tr:last-child td { border-bottom: none; }
 
 /* Calendario de mes para elegir/cambiar horario y reagendar: navegar por
    mes, ver de un vistazo qué días tienen cupo, y elegir la hora abajo. */
-.cal-widget { background: #fff; border: 1px solid var(--linea); padding: 18px 20px 20px; }
-.cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 14px; }
-.cal-mes-titulo { font-family: 'Playfair Display', serif; font-size: 15.5px; font-weight: 600; text-transform: capitalize; }
+.cal-widget { max-width: 340px; background: #fff; border: 1px solid var(--linea); padding: 14px 16px 16px; }
+.cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
+.cal-mes-titulo { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 600; text-transform: capitalize; }
 .cal-nav {
-  background: none; border: 1px solid var(--linea); border-radius: 999px; width: 30px; height: 30px;
-  font-size: 16px; line-height: 1; color: var(--texto-suave); cursor: pointer; font-family: 'Inter', sans-serif;
+  background: none; border: 1px solid var(--linea); border-radius: 999px; width: 24px; height: 24px;
+  font-size: 14px; line-height: 1; color: var(--texto-suave); cursor: pointer; font-family: 'Inter', sans-serif;
 }
 .cal-nav:hover:not(:disabled) { border-color: var(--acento); color: var(--acento); }
 .cal-nav:disabled { opacity: .3; cursor: default; }
 .cal-dow {
-  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 11px;
-  color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 6px;
+  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 10px;
+  color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px;
 }
-.cal-celdas { display: grid; grid-template-columns: repeat(7, 1fr); gap: 4px; margin-bottom: 20px; }
+.cal-celdas { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 14px; }
 .cal-celda {
-  position: relative; aspect-ratio: 1; border: 1px solid transparent; border-radius: 8px;
-  background: none; font-family: 'Inter', sans-serif; font-size: 13.5px; color: var(--texto);
+  position: relative; aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px;
+  background: none; font-family: 'Inter', sans-serif; font-size: 11.5px; color: var(--texto);
   cursor: pointer; display: flex; align-items: center; justify-content: center;
 }
 .cal-celda-vacia { visibility: hidden; cursor: default; }
