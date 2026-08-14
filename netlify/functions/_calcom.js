@@ -73,6 +73,20 @@ function sumarDiasFecha(fecha, dias) {
   return `${dt.getUTCFullYear()}-${pad(dt.getUTCMonth() + 1)}-${pad(dt.getUTCDate())}`;
 }
 
+// Dada una fecha 'YYYY-MM-DD', calcula el domingo y el sábado de esa
+// misma semana (0=domingo, como en dia_semana) — para contar cuántas
+// clases tiene una alumna en la semana de una fecha dada.
+function limitesSemana(fecha) {
+  const [y, m, d] = fecha.split('-').map(Number);
+  const dt = new Date(Date.UTC(y, m - 1, d));
+  const dow = dt.getUTCDay();
+  const inicio = new Date(dt.getTime() - dow * 86400000);
+  const fin = new Date(inicio.getTime() + 6 * 86400000);
+  const pad = (n) => String(n).padStart(2, '0');
+  const fmt = (x) => `${x.getUTCFullYear()}-${pad(x.getUTCMonth() + 1)}-${pad(x.getUTCDate())}`;
+  return { inicio: fmt(inicio), fin: fmt(fin) };
+}
+
 module.exports = {
   CALCOM_API_VERSION,
   CALCOM_USERNAME,
@@ -84,4 +98,5 @@ module.exports = {
   partesLima,
   limaAUTC,
   sumarDiasFecha,
+  limitesSemana,
 };
