@@ -310,7 +310,11 @@
         b.textContent = opciones.reemplazar ? 'Cambiando...' : 'Creando tu horario...';
         try {
           const { data: { session } } = await supa.auth.getSession();
-          const payload = { diaSemana, hora };
+          // Mandamos también la fecha exacta que la alumna eligió en el
+          // calendario (no solo el día de la semana), para que la primera
+          // clase se cree ahí y no en la próxima ocurrencia de ese día
+          // desde hoy (que puede ser una fecha distinta, más cercana).
+          const payload = { diaSemana, hora, inicioISO: isoTime };
           if (opciones.reemplazar) {
             payload.reemplazar = true;
             payload.horarioFijoId = opciones.horarioFijoId;
