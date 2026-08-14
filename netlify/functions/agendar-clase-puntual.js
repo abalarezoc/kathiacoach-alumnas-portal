@@ -6,14 +6,20 @@
 // A diferencia de asignar-horario-fijo.js: no valida "un solo horario
 // por día" (una clase adicional puede caer el mismo día que su
 // horario fijo, es justamente el caso de uso), no crea fila en
-// horario_fijo, y solo agenda esa una vez en Cal.com.
+// horario_fijo, y solo agenda esa una vez en Cal.com. Sí valida el
+// máximo de 3 clases por semana en total (fijas + puntuales).
 //
 // Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
 // ============================================================
 
-const { CALCOM_USERNAME, HORARIO_FIJO_SLUG, calcomHeaders, partesLima } = require('./_calcom');
+const { CALCOM_USERNAME, HORARIO_FIJO_SLUG, calcomHeaders, partesLima, limitesSemana } = require('./_calcom');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
+
+// Cuenta contra el mismo tope semanal que las clases fijas — entre
+// ambas no puede haber más de esto en una misma semana (domingo a
+// sábado).
+const MAX_CLASES_POR_SEMANA = 3;
 
 exports.handler = async function (event) {
   if (event.httpMethod !== 'POST') {
@@ -67,7 +73,21 @@ exports.handler = async function (event) {
       return { statusCode: 400, body: JSON.stringify({ ok: false, mensaje: 'No se encontró tu perfil (nombre/correo).' }) };
     }
 
-    // 2. Crea la reserva en Cal.com — una sola, sin regla semanal detrás.
+    // 2. Máximo 3 clases por semana en total (fijas + puntuales) — cuenta
+    // todo lo que ya tenga programado esa semana (domingo a sábado).
+    const { fecha: fechaElegida } = partesLima(inicio);
+    const { inicio: semInicio, fin: semFin } = limitesSemana(fechaElegida);
+    const conteoResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/citas_fijas?alumna_id=eq.${userData.id}&estado=eq.programada&fecha=gte.${semInicio}&fecha=lte.${semFin}&select=id`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    const conteoData = await conteoResp.json();
+    const totalEsaSemana = Array.isArray(conteoData) ? conteoData.length : 0;
+    if (totalEsaSemana >= MAX_CLASES_POR_SEMANA) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: `Esa semana ya tienes ${MAX_CLASES_POR_SEMANA} clases programadas, que es el máximo permitido. Elige otra semana o cancela una de las que ya tienes.` }) };
+    }
+
+    // 3. Crea la reserva en Cal.com — una sola, sin regla semanal detrás.
     const bookingResp = await fetch('https://api.cal.com/v2/bookings', {
       method: 'POST',
       headers: calcomHeaders(CALCOM_API_KEY),
@@ -89,8 +109,8 @@ exports.handler = async function (event) {
       return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Cal.com no devolvió la reserva creada.' }) };
     }
 
-    // 3. Guarda la cita en Supabase — sin horario_fijo_id, porque es suelta.
-    const { fecha, hora } = partesLima(inicio);
+    // 4. Guarda la cita en Supabase — sin horario_fijo_id, porque es suelta.
+    const { fecha, hora } = partesLima(inicio); // fecha === fechaElegida de arriba
     const citaResp = await fetch(`${SUPABASE_URL}/rest/v1/citas_fijas`, {
       method: 'POST',
       headers: {
