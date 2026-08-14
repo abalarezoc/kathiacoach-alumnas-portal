@@ -75,10 +75,25 @@ input:focus { outline: none; border-color: var(--acento); }
 /* --- Portal --- */
 main.portal { padding: 48px 0 80px; }
 .greeting { font-size: 26px; margin-bottom: 6px; }
-.greeting-sub { color: var(--texto-suave); font-size: 15px; margin-bottom: 44px; }
+.greeting-sub { color: var(--texto-suave); font-size: 15px; margin-bottom: 32px; }
+
+/* Pestañas del portal: separan "Mi progreso" de "Mi horario" */
+.portal-tabs { display: flex; gap: 8px; margin-bottom: 36px; border-bottom: 1px solid var(--linea); }
+.portal-tab {
+  position: relative; background: none; border: none; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600; color: var(--texto-suave);
+  padding: 10px 6px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent;
+}
+.portal-tab:hover { color: var(--texto); }
+.portal-tab.active { color: var(--acento); border-bottom-color: var(--acento); }
+.tab-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 999px;
+  background: #c0392b; margin-left: 6px; vertical-align: middle;
+}
 
 section.block { margin-bottom: 48px; }
-section.block h3 { font-size: 18px; margin-bottom: 18px; }
+section.block h3 { font-size: 18px; margin-bottom: 6px; }
+.panel-sub { color: var(--texto-suave); font-size: 14px; margin-bottom: 18px; }
 
 table.progreso { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--linea); }
 table.progreso th, table.progreso td { padding: 12px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--linea); }
