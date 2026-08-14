@@ -106,10 +106,21 @@
   // Carga (o recarga) la lista de alumnas y su resumen de progreso.
   // Separado de init() para poder llamarlo de nuevo cuando la pestaña
   // vuelve a tener foco, sin repetir la verificación de sesión/admin.
+  // Actualiza el puntito con número en "Alumnas" a partir de lo que ya
+  // hay en alumnasCache — para no tener que recargar todo solo por eso.
+  function actualizarDotNuevas() {
+    const numNuevas = alumnasCache.filter(a => !a.revisada_por_kathia).length;
+    const dot = document.getElementById('nuevas-dot');
+    if (dot) {
+      dot.textContent = numNuevas;
+      dot.style.display = numNuevas > 0 ? 'flex' : 'none';
+    }
+  }
+
   async function cargarAlumnas() {
     const { data: alumnas, error } = await supa
       .from('alumnas')
-      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm')
+      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm, revisada_por_kathia')
       .eq('es_admin', false)
       .eq('activa', true)
       .order('nombre', { ascending: true });
@@ -137,21 +148,27 @@
       if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
     });
 
+    // Horario fijo activo de cada alumna (si ya eligió uno), para mostrarlo
+    // directo en su tarjeta sin tener que entrar a su ficha.
+    const { data: horariosTodo } = await supa
+      .from('horario_fijo')
+      .select('alumna_id, dia_semana, hora')
+      .eq('activo', true);
+    const horarioPorAlumna = {};
+    (horariosTodo || []).forEach(h => { horarioPorAlumna[h.alumna_id] = h; });
+
     alumnasCache = alumnas.map(a => ({
       ...a,
       total: resumen[a.id] ? resumen[a.id].total : 0,
       ultima: resumen[a.id] ? resumen[a.id].ultima : null,
       ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
       pesos: resumen[a.id] ? resumen[a.id].pesos : [],
+      horarioFijo: horarioPorAlumna[a.id] || null,
     }));
 
-    // Puntito con número en "Alumnas" si hay alumnas sin ningún registro todavía
-    const numNuevas = alumnasCache.filter(a => a.total === 0).length;
-    const dot = document.getElementById('nuevas-dot');
-    if (dot) {
-      dot.textContent = numNuevas;
-      dot.style.display = numNuevas > 0 ? 'flex' : 'none';
-    }
+    // Puntito con número en "Alumnas" para las que Kathia todavía no revisó
+    // (entran así apenas se registran, sin importar si pusieron su peso).
+    actualizarDotNuevas();
   }
 
   async function init() {
@@ -486,8 +503,13 @@
         edadHTML = `<div class="card-meta">${edad} años · cumple ${fmtDiaMes(a.fecha_nacimiento)}${aviso}</div>`;
       }
 
+      const horarioHTML = a.horarioFijo
+        ? `<div class="card-meta">📅 ${nombreDia(a.horarioFijo.dia_semana)} ${fmtHora12(a.horarioFijo.hora)}</div>`
+        : `<div class="card-meta">📅 Sin horario fijo aún</div>`;
+
       return `
-        <div class="alumna-card ${a.total === 0 ? 'nueva' : ''}" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
+        <div class="alumna-card ${!a.revisada_por_kathia ? 'nueva' : ''}" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
+          ${!a.revisada_por_kathia ? `<div class="badge-row"><span class="badge nueva">✨ Recién registrada</span></div>` : ''}
           <div class="nombre">${a.nombre || a.email}</div>
           <div class="email">${a.email || ''}</div>
           <div class="badge-row">
@@ -497,6 +519,7 @@
           ${medidas.length ? `<div class="card-meta card-medidas">${medidas.join(' · ')}</div>` : ''}
           ${indices.length ? `<div class="card-meta card-medidas">${indices.join(' · ')}</div>` : ''}
           ${edadHTML}
+          ${horarioHTML}
           <div class="card-meta">${a.total} registro${a.total === 1 ? '' : 's'} ${a.ultima ? '· último: ' + fmtFecha(a.ultima) : ''}</div>
         </div>
       `;
@@ -578,6 +601,14 @@
     vistaActual = 'detalle';
     const a = alumnasCache.find(x => x.id === id);
     contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
+
+    // Primera vez que Kathia abre a esta alumna: se marca como revisada,
+    // así deja de aparecer como "recién registrada" en la lista.
+    if (a && !a.revisada_por_kathia) {
+      a.revisada_por_kathia = true;
+      actualizarDotNuevas();
+      supa.from('alumnas').update({ revisada_por_kathia: true }).eq('id', id).then(() => {});
+    }
 
     const { data: progreso } = await supa
       .from('progreso')
