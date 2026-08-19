@@ -3,14 +3,14 @@
 // le aparece el recordatorio suave en su portal. De paso, puede
 // elegir cada cuánto quiere que se le vuelva a preguntar (o nunca).
 //
-// No toca nada en Cal.com — las clases se siguen reservando solas
-// de fondo (eso lo hace renovar-horarios-fijos.js). Esto solo
+// No toca nada en el calendario — las sesiones se siguen reservando
+// solas de fondo (eso lo hace renovar-horarios-fijos.js). Esto solo
 // actualiza cuándo (y si) se le vuelve a mostrar el aviso.
 //
 // Requiere SUPABASE_SERVICE_ROLE_KEY en Netlify.
 // ============================================================
 
-const { sumarDiasFecha, partesLima } = require('./_calcom');
+const { sumarDiasFecha, partesLima } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 

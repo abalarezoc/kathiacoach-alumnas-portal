@@ -4,24 +4,25 @@
 // horario fijo activo, para que a las alumnas nunca se les acabe
 // el calendario sin avisar.
 //
-// Cada horario fijo se creó originalmente con 12 semanas (unos 3
-// meses) de clases ya reservadas en Cal.com. Cada vez que corre
-// esta función, revisa cuántas clases "programada" le quedan por
-// delante a cada horario; si le quedan menos de UMBRAL_SEMANAS,
-// crea las que falten para volver a tener OBJETIVO_SEMANAS por
-// delante — continuando la cadena semanal desde la última clase
-// que ya existe (así nunca hay huecos ni choques de fecha).
+// Cada horario fijo se creó originalmente con unas pocas sesiones ya
+// reservadas en Google Calendar. Cada vez que corre esta función,
+// revisa cuántas sesiones "programada" le quedan por delante a cada
+// horario; si le quedan menos de UMBRAL_SEMANAS, crea las que falten
+// para volver a tener OBJETIVO_SEMANAS por delante — continuando la
+// cadena semanal desde la última sesión que ya existe (así nunca hay
+// huecos ni choques de fecha).
 //
 // Se programa sola desde netlify.toml (schedule = "@daily"), no
 // hace falta que nadie la ejecute a mano.
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
 // ============================================================
 
 const {
-  CALCOM_USERNAME, HORARIO_FIJO_SLUG,
-  calcomHeaders, proximaOcurrenciaUTC, masSemanas, partesLima, limaAUTC,
-} = require('./_calcom');
+  crearEventoCalendar,
+  proximaOcurrenciaUTC, masSemanas, partesLima, limaAUTC, DURACION_SESION_MIN,
+} = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 const UMBRAL_SEMANAS = 4;
@@ -29,9 +30,8 @@ const OBJETIVO_SEMANAS = 12;
 
 exports.handler = async function () {
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    console.log('renovar-horarios-fijos: falta SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY, no se hizo nada.');
+  if (!SERVICE_ROLE_KEY) {
+    console.log('renovar-horarios-fijos: falta SUPABASE_SERVICE_ROLE_KEY, no se hizo nada.');
     return { statusCode: 200, body: 'ok' };
   }
 
@@ -54,7 +54,7 @@ exports.handler = async function () {
     let renovados = 0;
 
     for (const horario of horarios) {
-      // 2. Cuántas clases "programada" le quedan por delante.
+      // 2. Cuántas sesiones "programada" le quedan por delante.
       const futurasResp = await fetch(
         `${SUPABASE_URL}/rest/v1/citas_fijas?horario_fijo_id=eq.${horario.id}&estado=eq.programada&fecha=gte.${hoyLima}&select=id`,
         { headers: sbHeaders }
@@ -66,7 +66,7 @@ exports.handler = async function () {
       const faltan = OBJETIVO_SEMANAS - cantFuturas;
       if (faltan <= 0) continue;
 
-      // 3. Última clase que ya existe para este horario (cualquier estado),
+      // 3. Última sesión que ya existe para este horario (cualquier estado),
       // para seguir la cadena semanal justo después, sin huecos ni choques.
       const ultimaResp = await fetch(
         `${SUPABASE_URL}/rest/v1/citas_fijas?horario_fijo_id=eq.${horario.id}&select=fecha,hora&order=fecha.desc,hora.desc&limit=1`,
@@ -77,41 +77,35 @@ exports.handler = async function () {
       const baseUTC = ultima ? limaAUTC(ultima.fecha, ultima.hora) : proximaOcurrenciaUTC(horario.dia_semana, horario.hora);
       const primeraNuevaUTC = ultima ? masSemanas(baseUTC, 1) : baseUTC;
 
-      // 4. Datos de la alumna, para el nombre/correo del asistente en Cal.com.
+      // 4. Datos de la alumna, para el nombre/correo del asistente del evento.
       const alumnaResp = await fetch(
-        `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${horario.alumna_id}&select=nombre,email`,
+        `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${horario.alumna_id}&select=nombre,email,direccion,recibir_invites_calendario`,
         { headers: sbHeaders }
       );
       const alumnaRows = await alumnaResp.json();
       const alumna = Array.isArray(alumnaRows) && alumnaRows[0];
       if (!alumna || !alumna.email) { console.log(`renovar-horarios-fijos: sin datos de alumna para horario ${horario.id}, se salta.`); continue; }
 
-      // 5. Crea, una por una, las clases que faltan.
+      // 5. Crea, una por una, las sesiones que faltan.
       const creadas = [];
       for (let i = 0; i < faltan; i++) {
         const inicioUTC = masSemanas(primeraNuevaUTC, i);
         try {
-          const bookingResp = await fetch('https://api.cal.com/v2/bookings', {
-            method: 'POST',
-            headers: calcomHeaders(CALCOM_API_KEY),
-            body: JSON.stringify({
-              eventTypeSlug: HORARIO_FIJO_SLUG,
-              username: CALCOM_USERNAME,
-              start: inicioUTC.toISOString(),
-              attendee: { name: alumna.nombre || alumna.email, email: alumna.email, timeZone: 'America/Lima' },
-            }),
+          const { eventId } = await crearEventoCalendar({
+            inicioUTC,
+            finUTC: new Date(inicioUTC.getTime() + DURACION_SESION_MIN * 60000),
+            nombreAlumna: alumna.nombre || alumna.email,
+            emailAlumna: alumna.email,
+            descripcion: 'Sesión de horario fijo (renovación automática).',
+            direccion: alumna.direccion || null,
+            notificar: !!alumna.recibir_invites_calendario,
           });
-          const bookingData = await bookingResp.json();
-          if (!bookingResp.ok) continue;
-          const booking = (bookingData && bookingData.data) || bookingData;
-          const uid = booking && (booking.uid || (Array.isArray(booking) && booking[0] && booking[0].uid));
-          if (!uid) continue;
           const { fecha, hora } = partesLima(inicioUTC);
-          creadas.push({ fecha, hora, calcom_booking_uid: uid });
+          creadas.push({ fecha, hora, calcom_booking_uid: eventId });
         } catch (e) { /* seguimos con la siguiente semana */ }
       }
 
-      if (creadas.length === 0) { console.log(`renovar-horarios-fijos: no se pudo crear ninguna clase nueva para horario ${horario.id}.`); continue; }
+      if (creadas.length === 0) { console.log(`renovar-horarios-fijos: no se pudo crear ninguna sesión nueva para horario ${horario.id}.`); continue; }
 
       await fetch(`${SUPABASE_URL}/rest/v1/citas_fijas`, {
         method: 'POST',
@@ -127,7 +121,7 @@ exports.handler = async function () {
       });
 
       renovados++;
-      console.log(`renovar-horarios-fijos: horario ${horario.id} renovado con ${creadas.length} clase(s) nueva(s).`);
+      console.log(`renovar-horarios-fijos: horario ${horario.id} renovado con ${creadas.length} sesión(s) nueva(s).`);
     }
 
     console.log(`renovar-horarios-fijos: listo, ${renovados} horario(s) renovado(s) de ${horarios.length} activo(s).`);

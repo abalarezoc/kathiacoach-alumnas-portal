@@ -1,17 +1,19 @@
 // ============================================================
 // Función serverless: quita (desactiva) un horario fijo por completo —
-// no una clase suelta, sino toda la serie semanal.
+// no una sesión suelta, sino toda la serie semanal.
 //
 // La puede llamar la propia alumna dueña de ese horario (para dejar de
-// tener clase fija de cada semana), o Kathia desde su panel para
-// cualquier alumna. Cancela en Cal.com todas las clases futuras
-// todavía "programada" de esa regla, y marca el horario como inactivo
-// (no se borra nada — el historial de clases pasadas queda intacto).
+// tener sesión fija de cada semana), o Kathia desde su panel para
+// cualquier alumna. Cancela en Google Calendar todas las sesiones
+// futuras todavía "programada" de esa regla, y marca el horario como
+// inactivo (no se borra nada — el historial de sesiones pasadas queda
+// intacto).
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
 // ============================================================
 
-const { calcomHeaders } = require('./_calcom');
+const { cancelarEventoCalendar } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 
@@ -21,9 +23,8 @@ exports.handler = async function (event) {
   }
 
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY en Netlify.' }) };
+  if (!SERVICE_ROLE_KEY) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Netlify.' }) };
   }
 
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
@@ -57,17 +58,25 @@ exports.handler = async function (event) {
     const perfilData = await perfilResp.json();
     const esAdmin = Array.isArray(perfilData) && perfilData[0] && perfilData[0].es_admin;
 
-    // 1b. Si no es admin, solo puede quitar SU PROPIO horario.
-    if (!esAdmin) {
-      const horarioResp = await fetch(
-        `${SUPABASE_URL}/rest/v1/horario_fijo?id=eq.${horarioFijoId}&select=alumna_id`,
+    // 1b. Averigua de quién es el horario (se necesita siempre, admin o no,
+    // para saber si esa alumna quiere el correo de Google Calendar).
+    const horarioResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/horario_fijo?id=eq.${horarioFijoId}&select=alumna_id`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    const horarioData = await horarioResp.json();
+    const horario = Array.isArray(horarioData) && horarioData[0];
+    if (!esAdmin && (!horario || horario.alumna_id !== userData.id)) {
+      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Ese horario no es tuyo.' }) };
+    }
+    let notificarAlumna = false;
+    if (horario) {
+      const alumnaResp = await fetch(
+        `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${horario.alumna_id}&select=recibir_invites_calendario`,
         { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
       );
-      const horarioData = await horarioResp.json();
-      const horario = Array.isArray(horarioData) && horarioData[0];
-      if (!horario || horario.alumna_id !== userData.id) {
-        return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Ese horario no es tuyo.' }) };
-      }
+      const alumnaData = await alumnaResp.json();
+      notificarAlumna = !!(Array.isArray(alumnaData) && alumnaData[0] && alumnaData[0].recibir_invites_calendario);
     }
 
     // 2. Busca las citas futuras aún programadas de ese horario.
@@ -77,14 +86,11 @@ exports.handler = async function (event) {
     );
     const citas = await citasResp.json();
 
-    // 3. Cancela cada una en Cal.com (mejor esfuerzo — seguimos aunque una falle).
+    // 3. Cancela cada una en Google Calendar (mejor esfuerzo — seguimos
+    // aunque una falle).
     for (const cita of (citas || [])) {
       try {
-        await fetch(`https://api.cal.com/v2/bookings/${cita.calcom_booking_uid}/cancel`, {
-          method: 'POST',
-          headers: calcomHeaders(CALCOM_API_KEY),
-          body: JSON.stringify({ cancellationReason: 'Se canceló el horario fijo de cada semana.' }),
-        });
+        await cancelarEventoCalendar(cita.calcom_booking_uid, notificarAlumna);
       } catch (e) { /* seguimos con las demás */ }
     }
 

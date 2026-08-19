@@ -1,15 +1,16 @@
 // ============================================================
-// Función serverless: Kathia reagenda la clase de horario fijo de
+// Función serverless: Kathia reagenda la sesión de horario fijo de
 // CUALQUIER alumna, desde su panel (admin.html).
 //
 // A diferencia de reagendar-cita.js (que usa la alumna desde su
 // portal), aquí no hay límite de 24 horas de anticipación — Kathia
 // puede reagendar cuando lo necesite, incluso el mismo día.
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
 // ============================================================
 
-const { calcomHeaders, partesLima } = require('./_calcom');
+const { reagendarEventoCalendar, partesLima, DURACION_SESION_MIN } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 
@@ -19,9 +20,8 @@ exports.handler = async function (event) {
   }
 
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY en Netlify.' }) };
+  if (!SERVICE_ROLE_KEY) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Netlify.' }) };
   }
 
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
@@ -66,32 +66,37 @@ exports.handler = async function (event) {
     const citaRows = await citaResp.json();
     const cita = Array.isArray(citaRows) && citaRows[0];
     if (!cita) {
-      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa clase.' }) };
+      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa sesión.' }) };
     }
     if (cita.estado !== 'programada') {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta clase ya no está activa (fue reagendada, cancelada o ya pasó).' }) };
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta sesión ya no está activa (fue reagendada, cancelada o ya pasó).' }) };
     }
 
-    // 3. Reagenda en Cal.com — sin restricción de anticipación.
-    const reschedResp = await fetch(`https://api.cal.com/v2/bookings/${cita.calcom_booking_uid}/reschedule`, {
-      method: 'POST',
-      headers: calcomHeaders(CALCOM_API_KEY),
-      body: JSON.stringify({ start: nuevoInicioUTC, reschedulingReason: 'Reagendado por Kathia desde el panel.' }),
-    });
-    const reschedData = await reschedResp.json();
-    if (!reschedResp.ok) {
-      const msj = (reschedData && reschedData.error && reschedData.error.message) || reschedData.message || 'No se pudo reagendar en Cal.com.';
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: msj }) };
-    }
-    const nuevoBooking = (reschedData && reschedData.data) || reschedData;
-    const nuevoUid = (nuevoBooking && nuevoBooking.uid) || cita.calcom_booking_uid;
-    const { fecha, hora } = partesLima(new Date(nuevoInicioUTC));
+    // 3. Reagenda en Google Calendar — sin restricción de anticipación.
+    const alumnaResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${cita.alumna_id}&select=recibir_invites_calendario`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    const alumnaData = await alumnaResp.json();
+    const notificarAlumna = !!(Array.isArray(alumnaData) && alumnaData[0] && alumnaData[0].recibir_invites_calendario);
 
-    // 4. Actualiza el registro en Supabase.
+    const nuevoInicio = new Date(nuevoInicioUTC);
+    try {
+      await reagendarEventoCalendar(cita.calcom_booking_uid, {
+        inicioUTC: nuevoInicio,
+        finUTC: new Date(nuevoInicio.getTime() + DURACION_SESION_MIN * 60000),
+        notificar: notificarAlumna,
+      });
+    } catch (e) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: e.message }) };
+    }
+    const { fecha, hora } = partesLima(nuevoInicio);
+
+    // 4. Actualiza el registro en Supabase (el eventId no cambia).
     await fetch(`${SUPABASE_URL}/rest/v1/citas_fijas?id=eq.${citaId}`, {
       method: 'PATCH',
       headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha, hora, calcom_booking_uid: nuevoUid }),
+      body: JSON.stringify({ fecha, hora }),
     });
 
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, fecha, hora }) };

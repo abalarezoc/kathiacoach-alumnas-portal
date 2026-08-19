@@ -1,22 +1,27 @@
 // ============================================================
-// Función serverless: agenda UNA clase suelta ("puntual"), además
+// Función serverless: agenda UNA sesión suelta ("puntual"), además
 // del horario fijo de la alumna — no crea ninguna regla semanal, solo
 // una cita individual en la fecha/hora que eligió del calendario.
 //
 // A diferencia de asignar-horario-fijo.js: no valida "un solo horario
-// por día" (una clase adicional puede caer el mismo día que su
+// por día" (una sesión adicional puede caer el mismo día que su
 // horario fijo, es justamente el caso de uso), no crea fila en
-// horario_fijo, y solo agenda esa una vez en Cal.com. Sí valida el
-// máximo de 3 clases por semana en total (fijas + puntuales).
+// horario_fijo, y solo agenda esa una vez. Sí valida el máximo de 3
+// sesiones por semana en total (fijas + puntuales).
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
+//
+// Nota: la cita se guarda en la columna calcom_booking_uid de Supabase por
+// compatibilidad con el esquema existente, pero ahora contiene el eventId
+// de Google Calendar, no un uid de Cal.com.
 // ============================================================
 
-const { CALCOM_USERNAME, HORARIO_FIJO_SLUG, calcomHeaders, partesLima, limitesSemana } = require('./_calcom');
+const { crearEventoCalendar, partesLima, limitesSemana, DURACION_SESION_MIN } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 
-// Cuenta contra el mismo tope semanal que las clases fijas — entre
+// Cuenta contra el mismo tope semanal que las sesiones fijas — entre
 // ambas no puede haber más de esto en una misma semana (domingo a
 // sábado).
 const MAX_CLASES_POR_SEMANA = 3;
@@ -27,9 +32,8 @@ exports.handler = async function (event) {
   }
 
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY en Netlify.' }) };
+  if (!SERVICE_ROLE_KEY) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Netlify.' }) };
   }
 
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
@@ -62,18 +66,20 @@ exports.handler = async function (event) {
     }
 
     const perfilResp = await fetch(
-      `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${userData.id}&select=nombre,email`,
+      `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${userData.id}&select=nombre,email,direccion,recibir_invites_calendario`,
       { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
     );
     const perfilData = await perfilResp.json();
     const miPerfil = Array.isArray(perfilData) && perfilData[0];
     const nombreAlumna = miPerfil && (miPerfil.nombre || miPerfil.email);
     const emailAlumna = miPerfil && miPerfil.email;
+    const direccionAlumna = miPerfil && miPerfil.direccion;
+    const notificarAlumna = !!(miPerfil && miPerfil.recibir_invites_calendario);
     if (!nombreAlumna || !emailAlumna) {
       return { statusCode: 400, body: JSON.stringify({ ok: false, mensaje: 'No se encontró tu perfil (nombre/correo).' }) };
     }
 
-    // 2. Máximo 3 clases por semana en total (fijas + puntuales) — cuenta
+    // 2. Máximo 3 sesiones por semana en total (fijas + puntuales) — cuenta
     // todo lo que ya tenga programado esa semana (domingo a sábado).
     const { fecha: fechaElegida } = partesLima(inicio);
     const { inicio: semInicio, fin: semFin } = limitesSemana(fechaElegida);
@@ -84,29 +90,26 @@ exports.handler = async function (event) {
     const conteoData = await conteoResp.json();
     const totalEsaSemana = Array.isArray(conteoData) ? conteoData.length : 0;
     if (totalEsaSemana >= MAX_CLASES_POR_SEMANA) {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: `Esa semana ya tienes ${MAX_CLASES_POR_SEMANA} clases programadas, que es el máximo permitido. Elige otra semana o cancela una de las que ya tienes.` }) };
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: `Esa semana ya tienes ${MAX_CLASES_POR_SEMANA} sesiones programadas, que es el máximo permitido. Elige otra semana o cancela una de las que ya tienes.` }) };
     }
 
-    // 3. Crea la reserva en Cal.com — una sola, sin regla semanal detrás.
-    const bookingResp = await fetch('https://api.cal.com/v2/bookings', {
-      method: 'POST',
-      headers: calcomHeaders(CALCOM_API_KEY),
-      body: JSON.stringify({
-        eventTypeSlug: HORARIO_FIJO_SLUG,
-        username: CALCOM_USERNAME,
-        start: inicio.toISOString(),
-        attendee: { name: nombreAlumna, email: emailAlumna, timeZone: 'America/Lima' },
-      }),
-    });
-    const bookingData = await bookingResp.json();
-    if (!bookingResp.ok) {
-      const msj = (bookingData && bookingData.error && bookingData.error.message) || bookingData.message || 'No se pudo agendar en Cal.com.';
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: msj }) };
-    }
-    const booking = (bookingData && bookingData.data) || bookingData;
-    const uid = booking && (booking.uid || (Array.isArray(booking) && booking[0] && booking[0].uid));
-    if (!uid) {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Cal.com no devolvió la reserva creada.' }) };
+    // 3. Crea el evento en Google Calendar — uno solo, sin regla semanal
+    // detrás. sendUpdates depende de si la alumna activó
+    // recibir_invites_calendario (por defecto no le llega ningún correo).
+    let eventId;
+    try {
+      const creado = await crearEventoCalendar({
+        inicioUTC: inicio,
+        finUTC: new Date(inicio.getTime() + DURACION_SESION_MIN * 60000),
+        nombreAlumna: nombreAlumna,
+        emailAlumna: emailAlumna,
+        descripcion: 'Sesión puntual agendada desde el portal.',
+        direccion: direccionAlumna || null,
+        notificar: notificarAlumna,
+      });
+      eventId = creado.eventId;
+    } catch (e) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: e.message }) };
     }
 
     // 4. Guarda la cita en Supabase — sin horario_fijo_id, porque es suelta.
@@ -124,12 +127,12 @@ exports.handler = async function (event) {
         horario_fijo_id: null,
         fecha,
         hora,
-        calcom_booking_uid: uid,
+        calcom_booking_uid: eventId,
         estado: 'programada',
       }),
     });
     if (!citaResp.ok) {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'La clase se creó en Cal.com pero no se pudo guardar aquí. Escríbele a Kathia para que lo revise.' }) };
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'La sesión se creó en el calendario pero no se pudo guardar aquí. Escríbele a Kathia para que lo revise.' }) };
     }
 
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, fecha, hora }) };

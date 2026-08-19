@@ -1,16 +1,16 @@
 // ============================================================
-// Función serverless: una alumna cancela una de sus clases de
+// Función serverless: una alumna cancela una de sus sesiones de
 // horario fijo (cancelación de emergencia).
 //
 // A diferencia de reagendar, esto SIEMPRE se permite, sin importar
-// cuán cerca esté la clase — pero si es el mismo día, el portal ya
-// le avisó antes de llamar aquí que la sesión se cobra igual. Este
-// aviso queda también anotado en el motivo de cancelación en Cal.com.
+// cuán cerca esté la sesión — pero si es el mismo día, el portal ya
+// le avisó antes de llamar aquí que la sesión se cobra igual.
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
 // ============================================================
 
-const { calcomHeaders } = require('./_calcom');
+const { cancelarEventoCalendar } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 
@@ -20,9 +20,8 @@ exports.handler = async function (event) {
   }
 
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY en Netlify.' }) };
+  if (!SERVICE_ROLE_KEY) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Netlify.' }) };
   }
 
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
@@ -58,32 +57,30 @@ exports.handler = async function (event) {
     const citaRows = await citaResp.json();
     const cita = Array.isArray(citaRows) && citaRows[0];
     if (!cita) {
-      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa clase.' }) };
+      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa sesión.' }) };
     }
     if (cita.alumna_id !== userData.id) {
-      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Esa clase no es tuya.' }) };
+      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Esa sesión no es tuya.' }) };
     }
     if (cita.estado !== 'programada') {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta clase ya no está activa.' }) };
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta sesión ya no está activa.' }) };
     }
 
-    // 3. Detecta si es el mismo día (hora de Lima), solo para anotarlo en Cal.com.
+    // 3. Detecta si es el mismo día (hora de Lima), solo informativo.
     const hoyLima = new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 10);
     const esMismoDia = cita.fecha === hoyLima;
-    const motivo = esMismoDia
-      ? 'Cancelación de emergencia el mismo día de la clase (se cobra la sesión según política).'
-      : 'Cancelación de emergencia desde el portal de la alumna.';
 
-    // 4. Cancela en Cal.com.
-    const cancelResp = await fetch(`https://api.cal.com/v2/bookings/${cita.calcom_booking_uid}/cancel`, {
-      method: 'POST',
-      headers: calcomHeaders(CALCOM_API_KEY),
-      body: JSON.stringify({ cancellationReason: motivo }),
-    });
-    const cancelData = await cancelResp.json();
-    if (!cancelResp.ok) {
-      const msj = (cancelData && cancelData.error && cancelData.error.message) || cancelData.message || 'No se pudo cancelar en Cal.com.';
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: msj }) };
+    // 4. Cancela (borra) el evento en Google Calendar.
+    const perfilResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${userData.id}&select=recibir_invites_calendario`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    const perfilData = await perfilResp.json();
+    const notificarAlumna = !!(Array.isArray(perfilData) && perfilData[0] && perfilData[0].recibir_invites_calendario);
+    try {
+      await cancelarEventoCalendar(cita.calcom_booking_uid, notificarAlumna);
+    } catch (e) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: e.message }) };
     }
 
     // 5. Marca la cita como cancelada en Supabase.

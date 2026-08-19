@@ -1,15 +1,19 @@
 // ============================================================
-// Función serverless: una alumna reagenda una de sus clases de
+// Función serverless: una alumna reagenda una de sus sesiones de
 // horario fijo.
 //
-// Solo se permite si faltan al menos 24 horas para esa clase (la
+// Solo se permite si faltan al menos 24 horas para esa sesión (la
 // política de "reagendar con 1 día de anticipación"). Si falta
 // menos, responde con un mensaje claro en vez de reagendar.
 //
-// Requiere SUPABASE_SERVICE_ROLE_KEY y CALCOM_API_KEY en Netlify.
+// Requiere SUPABASE_SERVICE_ROLE_KEY y GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/
+// GOOGLE_REFRESH_TOKEN en Netlify (Google Calendar reemplazó a Cal.com).
+//
+// Nota: a diferencia de Cal.com, reagendar en Google Calendar mueve el
+// MISMO evento (mismo eventId) — no hace falta guardar un uid nuevo.
 // ============================================================
 
-const { calcomHeaders, partesLima } = require('./_calcom');
+const { reagendarEventoCalendar, partesLima, DURACION_SESION_MIN } = require('./_googlecalendar');
 
 const SUPABASE_URL = 'https://gvtsfvedfjgauyxnyixr.supabase.co';
 const HORAS_MINIMAS_ANTICIPACION = 24;
@@ -20,9 +24,8 @@ exports.handler = async function (event) {
   }
 
   const SERVICE_ROLE_KEY = process.env.SUPABASE_SERVICE_ROLE_KEY;
-  const CALCOM_API_KEY = process.env.CALCOM_API_KEY;
-  if (!SERVICE_ROLE_KEY || !CALCOM_API_KEY) {
-    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY o CALCOM_API_KEY en Netlify.' }) };
+  if (!SERVICE_ROLE_KEY) {
+    return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Falta configurar SUPABASE_SERVICE_ROLE_KEY en Netlify.' }) };
   }
 
   const authHeader = event.headers.authorization || event.headers.Authorization || '';
@@ -58,13 +61,13 @@ exports.handler = async function (event) {
     const citaRows = await citaResp.json();
     const cita = Array.isArray(citaRows) && citaRows[0];
     if (!cita) {
-      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa clase.' }) };
+      return { statusCode: 404, body: JSON.stringify({ ok: false, mensaje: 'No se encontró esa sesión.' }) };
     }
     if (cita.alumna_id !== userData.id) {
-      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Esa clase no es tuya.' }) };
+      return { statusCode: 403, body: JSON.stringify({ ok: false, mensaje: 'Esa sesión no es tuya.' }) };
     }
     if (cita.estado !== 'programada') {
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta clase ya no está activa (fue reagendada, cancelada o ya pasó).' }) };
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: 'Esta sesión ya no está activa (fue reagendada, cancelada o ya pasó).' }) };
     }
 
     // 3. Valida la anticipación: al menos 24 horas antes del inicio actual.
@@ -74,30 +77,35 @@ exports.handler = async function (event) {
       return {
         statusCode: 200,
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ ok: false, mensaje: 'Ya no se puede reagendar esta clase: se necesita al menos 1 día de anticipación. Escríbele a Kathia directamente por WhatsApp.' }),
+        body: JSON.stringify({ ok: false, mensaje: 'Ya no se puede reagendar esta sesión: se necesita al menos 1 día de anticipación. Escríbele a Kathia directamente por WhatsApp.' }),
       };
     }
 
-    // 4. Reagenda en Cal.com.
-    const reschedResp = await fetch(`https://api.cal.com/v2/bookings/${cita.calcom_booking_uid}/reschedule`, {
-      method: 'POST',
-      headers: calcomHeaders(CALCOM_API_KEY),
-      body: JSON.stringify({ start: nuevoInicioUTC, reschedulingReason: 'Reagendado por la alumna desde su portal.' }),
-    });
-    const reschedData = await reschedResp.json();
-    if (!reschedResp.ok) {
-      const msj = (reschedData && reschedData.error && reschedData.error.message) || reschedData.message || 'No se pudo reagendar en Cal.com.';
-      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: msj }) };
-    }
-    const nuevoBooking = (reschedData && reschedData.data) || reschedData;
-    const nuevoUid = (nuevoBooking && nuevoBooking.uid) || cita.calcom_booking_uid;
-    const { fecha, hora } = partesLima(new Date(nuevoInicioUTC));
+    // 4. Reagenda en Google Calendar (mismo eventId, nuevo horario).
+    const perfilResp = await fetch(
+      `${SUPABASE_URL}/rest/v1/alumnas?id=eq.${userData.id}&select=recibir_invites_calendario`,
+      { headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}` } }
+    );
+    const perfilData = await perfilResp.json();
+    const notificarAlumna = !!(Array.isArray(perfilData) && perfilData[0] && perfilData[0].recibir_invites_calendario);
 
-    // 5. Actualiza el registro en Supabase.
+    const nuevoInicio = new Date(nuevoInicioUTC);
+    try {
+      await reagendarEventoCalendar(cita.calcom_booking_uid, {
+        inicioUTC: nuevoInicio,
+        finUTC: new Date(nuevoInicio.getTime() + DURACION_SESION_MIN * 60000),
+        notificar: notificarAlumna,
+      });
+    } catch (e) {
+      return { statusCode: 200, body: JSON.stringify({ ok: false, mensaje: e.message }) };
+    }
+    const { fecha, hora } = partesLima(nuevoInicio);
+
+    // 5. Actualiza el registro en Supabase (el eventId no cambia).
     await fetch(`${SUPABASE_URL}/rest/v1/citas_fijas?id=eq.${citaId}`, {
       method: 'PATCH',
       headers: { apikey: SERVICE_ROLE_KEY, Authorization: `Bearer ${SERVICE_ROLE_KEY}`, 'Content-Type': 'application/json' },
-      body: JSON.stringify({ fecha, hora, calcom_booking_uid: nuevoUid }),
+      body: JSON.stringify({ fecha, hora }),
     });
 
     return { statusCode: 200, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ ok: true, fecha, hora }) };

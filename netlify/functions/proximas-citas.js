@@ -1,20 +1,22 @@
 // ============================================================
-// Función serverless: próximas citas de Kathia (Cal.com)
+// Función serverless: próximas citas de Kathia (Google Calendar).
 //
-// Consulta la API de Cal.com desde el servidor (nunca desde el
-// navegador) para no exponer la API key. El panel de admin la
-// llama en /.netlify/functions/proximas-citas y recibe una lista
-// simple, ya lista para mostrar.
+// Consulta el calendario desde el servidor (nunca desde el navegador)
+// para no exponer las credenciales. El panel de admin la llama en
+// /.netlify/functions/proximas-citas y recibe una lista simple, ya
+// lista para mostrar.
 //
-// Requiere la variable de entorno CALCOM_API_KEY, configurada en
-// Netlify → Site settings → Environment variables. Sin esa
-// variable, la función responde "configurado: false" sin error.
+// Requiere GOOGLE_CLIENT_ID/GOOGLE_CLIENT_SECRET/GOOGLE_REFRESH_TOKEN
+// en Netlify (Google Calendar reemplazó a Cal.com). Sin ellas, la
+// función responde "configurado: false" sin error.
 // ============================================================
 
-exports.handler = async function () {
-  const apiKey = process.env.CALCOM_API_KEY;
+const { listaEventosCalendar } = require('./_googlecalendar');
 
-  if (!apiKey) {
+exports.handler = async function () {
+  const configurado = !!(process.env.GOOGLE_CLIENT_ID && process.env.GOOGLE_CLIENT_SECRET && process.env.GOOGLE_REFRESH_TOKEN);
+
+  if (!configurado) {
     return {
       statusCode: 200,
       headers: { 'Content-Type': 'application/json' },
@@ -23,34 +25,17 @@ exports.handler = async function () {
   }
 
   try {
-    const resp = await fetch('https://api.cal.com/v2/bookings?status=upcoming&take=50', {
-      headers: {
-        'Authorization': `Bearer ${apiKey}`,
-        'cal-api-version': '2024-08-13',
-      },
-    });
+    const eventos = await listaEventosCalendar({ desdeUTC: new Date(), maxResultados: 50 });
 
-    const data = await resp.json();
-
-    if (!resp.ok) {
-      const mensaje = (data && data.error && data.error.message) || data.message || 'No se pudo consultar Cal.com.';
-      return {
-        statusCode: 200,
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ configurado: true, error: true, mensaje, citas: [] }),
-      };
-    }
-
-    const lista = Array.isArray(data.data) ? data.data : Array.isArray(data) ? data : [];
-
-    const citas = lista
-      .map((b) => ({
-        titulo: b.title || 'Sesión',
-        inicio: b.start || b.startTime || null,
-        fin: b.end || b.endTime || null,
-        estado: b.status || null,
-        asistente: (b.attendees && b.attendees[0] && b.attendees[0].name) || null,
-        email: (b.attendees && b.attendees[0] && b.attendees[0].email) || null,
+    const citas = eventos
+      .map((e) => ({
+        titulo: e.summary || 'Sesión',
+        inicio: (e.start && (e.start.dateTime || e.start.date)) || null,
+        fin: (e.end && (e.end.dateTime || e.end.date)) || null,
+        estado: e.status || null,
+        asistente: (e.attendees && e.attendees[0] && e.attendees[0].displayName) || null,
+        email: (e.attendees && e.attendees[0] && e.attendees[0].email) || null,
+        ubicacion: e.location || null,
       }))
       .filter((c) => c.inicio)
       .sort((x, y) => new Date(x.inicio) - new Date(y.inicio));
