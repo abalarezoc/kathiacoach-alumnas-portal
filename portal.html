@@ -36,106 +36,6 @@
   const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const contentEl = document.getElementById('content');
 
-  // Perfil básico de la alumna que ya inició sesión — lo llena init()
-  // al cargar, y lo usan las funciones de agendar más abajo (que no
-  // tienen acceso directo a la variable local `perfil` de init()) para
-  // armar el mensaje de confirmación de WhatsApp.
-  let miPerfilNombre = '';
-  let miPerfilDireccion = null;
-
-  // ------------------------------------------------------------
-  // Confirmación de citas: como Google Calendar no manda ninguna
-  // notificación por defecto (sendUpdates:'none', para no llenarle el
-  // correo a Kathia ni a la alumna), la alumna no se entera de su
-  // sesión por ningún canal automático a menos que active esa opción.
-  // En vez de mandarle una invitación de Google (que le llenaría el
-  // correo, y de todas formas no le sirve si no usa Gmail), le
-  // mostramos un botón de "agregar a mi calendario" — funciona igual
-  // sin importar qué correo use — más el link de WhatsApp para avisar
-  // a Kathia.
-  //
-  // Duración de la sesión: debe coincidir con DURACION_SESION_MIN de
-  // netlify/functions/_googlecalendar.js. Se repite acá porque este
-  // archivo corre en el navegador, no puede importar ese módulo.
-  // Confirmado por Augusto: las sesiones de Kathia duran 60 minutos.
-  // ------------------------------------------------------------
-  const DURACION_SESION_MIN_PORTAL = 60;
-
-  function fechaHoraGoogleUTC(iso) {
-    return new Date(iso).toISOString().replace(/[-:]/g, '').replace(/\.\d{3}Z$/, 'Z');
-  }
-
-  function linkGoogleCalendarQuickAdd({ inicioISO, direccion }) {
-    const finISO = new Date(new Date(inicioISO).getTime() + DURACION_SESION_MIN_PORTAL * 60000).toISOString();
-    const params = new URLSearchParams({
-      action: 'TEMPLATE',
-      text: 'Sesión de entrenamiento con Kathia',
-      dates: `${fechaHoraGoogleUTC(inicioISO)}/${fechaHoraGoogleUTC(finISO)}`,
-      details: 'Sesión de entrenamiento agendada desde el portal de Kathia.',
-    });
-    if (direccion) params.set('location', direccion);
-    return `https://calendar.google.com/calendar/render?${params.toString()}`;
-  }
-
-  function descargarIcsCita({ inicioISO, direccion }) {
-    const finISO = new Date(new Date(inicioISO).getTime() + DURACION_SESION_MIN_PORTAL * 60000).toISOString();
-    const lineas = [
-      'BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//Kathia Coach//Portal//ES', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
-      'BEGIN:VEVENT',
-      `UID:${Date.now()}-${Math.floor(Math.random() * 1e6)}@kathiacoach`,
-      `DTSTAMP:${fechaHoraGoogleUTC(new Date().toISOString())}`,
-      `DTSTART:${fechaHoraGoogleUTC(inicioISO)}`,
-      `DTEND:${fechaHoraGoogleUTC(finISO)}`,
-      'SUMMARY:Sesión de entrenamiento con Kathia',
-      direccion ? `LOCATION:${direccion.replace(/\r?\n/g, ' ')}` : null,
-      'DESCRIPTION:Sesión agendada desde el portal de Kathia Coach.',
-      'END:VEVENT', 'END:VCALENDAR',
-    ].filter(Boolean).join('\r\n');
-    const blob = new Blob([lineas], { type: 'text/calendar' });
-    const url = URL.createObjectURL(blob);
-    const a = document.createElement('a');
-    a.href = url;
-    a.download = 'sesion-kathia-coach.ics';
-    document.body.appendChild(a);
-    a.click();
-    document.body.removeChild(a);
-    setTimeout(() => URL.revokeObjectURL(url), 5000);
-  }
-
-  function abrirWhatsappConfirmacion({ inicioISO, direccion, tipo }) {
-    const d = new Date(new Date(inicioISO).getTime() - 5 * 3600000); // hora de Lima
-    const pad = (n) => String(n).padStart(2, '0');
-    const fecha = `${d.getUTCFullYear()}-${pad(d.getUTCMonth() + 1)}-${pad(d.getUTCDate())}`;
-    const hora = `${pad(d.getUTCHours())}:${pad(d.getUTCMinutes())}`;
-    const fechaFmt = fmtFecha(fecha, { conDia: true });
-    const tipoTexto = tipo === 'fija' ? ' (horario fijo semanal)' : tipo === 'puntual' ? ' (sesión puntual)' : '';
-    let msg = `Hola! Confirmo mi sesión de entrenamiento con Kathia el ${fechaFmt} a las ${fmtHora12(hora)}${tipoTexto}.`;
-    if (direccion) msg += `\nDirección: ${direccion}`;
-    const url = `https://wa.me/${KATHIA_WHATSAPP}?text=${encodeURIComponent(msg)}`;
-    window.open(url, '_blank');
-  }
-
-  // Reemplaza el contenido de `area` por un cuadro de "¡listo!" con los
-  // tres botones de confirmación. Se usa justo después de agendar con
-  // éxito (horario fijo o sesión puntual) — `tipo` distingue cuál de las
-  // dos es, para que el mensaje de WhatsApp lo aclare.
-  function mostrarConfirmacionCita(area, mensaje, { inicioISO, direccion, tipo }) {
-    const urlGoogle = linkGoogleCalendarQuickAdd({ inicioISO, direccion });
-    area.innerHTML = `
-      <div class="empty-state" style="text-align:left;">
-        <p style="margin:0 0 12px;">${mensaje}</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap;">
-          <a class="btn-sm" href="${urlGoogle}" target="_blank" rel="noopener" style="text-decoration:none;">📅 Agregar a Google Calendar</a>
-          <button class="btn-sm" type="button" data-accion="ics">⬇️ Otro calendario (.ics)</button>
-          <button class="btn-sm" type="button" data-accion="whatsapp">💬 Confirmar por WhatsApp</button>
-        </div>
-        <span class="back-link" data-accion="cerrar" style="margin-top:14px; display:inline-block;">← Volver</span>
-      </div>`;
-    area.querySelector('[data-accion="ics"]').addEventListener('click', () => descargarIcsCita({ inicioISO, direccion }));
-    area.querySelector('[data-accion="whatsapp"]').addEventListener('click', () => abrirWhatsappConfirmacion({ inicioISO, direccion, tipo }));
-    area.querySelector('[data-accion="cerrar"]').addEventListener('click', () => init());
-  }
-
   function fmtFecha(iso, opciones) {
     const d = new Date(iso + 'T00:00:00');
     if (opciones && opciones.conDia) {
@@ -143,6 +43,21 @@
       return texto.charAt(0).toUpperCase() + texto.slice(1);
     }
     return d.toLocaleDateString('es-PE', { day: '2-digit', month: 'short', year: 'numeric' });
+  }
+
+  // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de
+  // referencia OMS — informativo, no reemplaza una evaluación clínica.
+  // (Misma fórmula que usa Kathia en su panel.)
+  function imcFor(pesoKg, estaturaCm) {
+    if (pesoKg == null || !estaturaCm) return null;
+    const m = estaturaCm / 100;
+    const imc = pesoKg / (m * m);
+    let categoria;
+    if (imc < 18.5) categoria = 'Bajo peso';
+    else if (imc < 25) categoria = 'Normal';
+    else if (imc < 30) categoria = 'Sobrepeso';
+    else categoria = 'Obesidad';
+    return { valor: imc.toFixed(1), categoria };
   }
 
   const NOMBRES_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
@@ -165,12 +80,12 @@
   // Construye un calendario de mes dentro de "area": los días con
   // horarios libres se ven resaltados y son clickeables; al elegir un
   // día se muestran sus horas abajo como chips. Se usa tanto para
-  // reagendar una sesión como para elegir/cambiar el horario fijo.
+  // reagendar una clase como para elegir/cambiar el horario fijo.
   // onElegir(boton, isoInicio) se llama al hacer clic en una hora.
   function construirCalendarioHorarios(area, slotsPorDia, onElegir) {
     const dias = Object.keys(slotsPorDia).sort();
     if (!dias.length) {
-      area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora. <a href="https://wa.me/${KATHIA_WHATSAPP}?text=Hola%20Kathia%2C%20no%20veo%20horarios%20libres%20en%20el%20portal." target="_blank" rel="noopener">Escríbele a Kathia directamente por WhatsApp</a>.</div>`;
+      area.innerHTML = `<div class="empty-state">No hay horarios libres por ahora. Escríbele a Kathia directamente por WhatsApp.</div>`;
       return;
     }
     const hoyLima = new Date(Date.now() - 5 * 3600000);
@@ -200,10 +115,10 @@
         }
         const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
         const tieneSlots = !!(slotsPorDia[fechaStr] && slotsPorDia[fechaStr].length);
-        const sesiones = ['cal-celda', tieneSlots ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
-        if (fechaStr === diaSeleccionado) sesiones.push('cal-celda-activa');
-        if (fechaStr === hoyStr) sesiones.push('cal-celda-hoy');
-        celdas += `<button type="button" class="${sesiones.join(' ')}" data-fecha="${fechaStr}"${tieneSlots ? '' : ' disabled'}>${numDia}${tieneSlots ? '<span class="cal-punto"></span>' : ''}</button>`;
+        const clases = ['cal-celda', tieneSlots ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneSlots ? '' : ' disabled'}>${numDia}${tieneSlots ? '<span class="cal-punto"></span>' : ''}</button>`;
       }
 
       area.innerHTML = `
@@ -260,13 +175,12 @@
   }
 
   // Calendario de solo lectura: marca los días que ya tienen alguna
-  // sesión agendada (fija o puntual). Al elegir un día, muestra el
+  // clase agendada (fija o puntual). Al elegir un día, muestra el
   // detalle de cada cita con sus acciones — las de horario fijo traen
-  // reagendar / cancelar / cancelar todo el horario (igual que en la
-  // pestaña "Agendar Sesión"); las puntuales traen reagendar (mueve
-  // solo esa sesión suelta) y cancelar, ya que no pertenecen a ninguna
-  // serie. citasPorDia es { 'YYYY-MM-DD': [{id, fecha, hora,
-  // horario_fijo_id}, ...] }.
+  // reagendar / cancelar por emergencia / cancelar todo el horario
+  // (igual que en la pestaña "Agendar Clase"); las puntuales solo
+  // cancelar, porque no pertenecen a ninguna serie. citasPorDia es
+  // { 'YYYY-MM-DD': [{id, fecha, hora, horario_fijo_id}, ...] }.
   function construirCalendarioMisClases(area, citasPorDia, horariosFijos) {
     const hoyLima = new Date(Date.now() - 5 * 3600000);
     const hoyStr = hoyLima.toISOString().slice(0, 10);
@@ -290,10 +204,10 @@
         }
         const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
         const tieneCitas = !!(citasPorDia[fechaStr] && citasPorDia[fechaStr].length);
-        const sesiones = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
-        if (fechaStr === diaSeleccionado) sesiones.push('cal-celda-activa');
-        if (fechaStr === hoyStr) sesiones.push('cal-celda-hoy');
-        celdas += `<button type="button" class="${sesiones.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
+        const clases = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
       }
 
       area.innerHTML = `
@@ -342,32 +256,28 @@
         <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
         ${citas.map(c => `
           <div class="horario-card" style="padding:12px 14px; margin-bottom:8px;">
-            <div class="horario-card-titulo" style="font-size:13.5px;">${fmtHora12(c.hora)} — ${c.horario_fijo_id != null ? 'Horario fijo' : 'Sesión adicional'}</div>
+            <div class="horario-card-titulo" style="font-size:13.5px;">${fmtHora12(c.hora)} — ${c.horario_fijo_id != null ? 'Horario fijo' : 'Clase adicional'}</div>
             ${c.horario_fijo_id != null ? `
               <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
                 <button class="btn-sm" type="button" id="mc-reagendar-${c.id}" title="Cambiar tu horario fijo a otro día u hora libre (hasta 1 día antes)">↻ Reagendar</button>
-                <button class="btn-sm btn-sm-danger" type="button" id="mc-cancelar-emergencia-${c.id}" title="Cancelar esta sesión">✕ Cancelar sesión</button>
+                <button class="btn-sm btn-sm-danger" type="button" id="mc-cancelar-emergencia-${c.id}" title="Cancelar esta clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
               </div>
               <div id="mc-reagendar-area-${c.id}" style="margin-top:8px;"></div>
               <div style="margin-top:10px;">
-                <span class="back-link back-link-danger" id="mc-cancelar-serie-${c.id}" style="font-size:12.5px;" title="Deja de tener esta sesión fija cada semana">🛑 Cancelar este horario fijo</span>
+                <span class="back-link back-link-danger" id="mc-cancelar-serie-${c.id}" style="font-size:12.5px;" title="Deja de tener esta clase fija cada semana">🛑 Cancelar este horario fijo</span>
                 <div id="mc-cancelar-serie-area-${c.id}" style="margin-top:8px;"></div>
               </div>
             ` : `
-              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:8px;">
-                <button class="btn-sm" type="button" id="mc-reagendar-puntual-${c.id}" title="Cambiar esta sesión a otro día u hora libre (hasta 1 día antes)">↻ Reagendar</button>
-                <button class="btn-sm btn-sm-danger" type="button" data-cancelar-cita="${c.id}">✕ Cancelar sesión</button>
-              </div>
-              <div id="mc-reagendar-puntual-area-${c.id}" style="margin-top:8px;"></div>
+              <span class="back-link back-link-danger" data-cancelar-cita="${c.id}" style="font-size:12.5px;">✕ Cancelar esta clase</span>
             `}
           </div>
         `).join('')}
       `;
 
-      // Sesiones puntuales: cancelar.
+      // Clases puntuales: solo cancelar.
       wrap.querySelectorAll('[data-cancelar-cita]').forEach(el => {
         el.addEventListener('click', async () => {
-          if (!confirm('¿Cancelar esta sesión?')) return;
+          if (!confirm('¿Cancelar esta clase?')) return;
           try {
             const { data: { session } } = await supa.auth.getSession();
             const resp = await fetch('/.netlify/functions/cancelar-cita', {
@@ -384,57 +294,9 @@
         });
       });
 
-      // Sesiones puntuales: también se pueden reagendar (mueve solo esa
-      // sesión suelta a otro día/hora libre, sin tocar ningún horario fijo).
-      citas.filter(c => c.horario_fijo_id == null).forEach(c => {
-        const btnReagendarPuntual = wrap.querySelector(`#mc-reagendar-puntual-${c.id}`);
-        if (!btnReagendarPuntual) return;
-        btnReagendarPuntual.addEventListener('click', async () => {
-          const inicio = new Date(`${c.fecha}T${c.hora}:00.000-05:00`);
-          const horasFaltantes = (inicio.getTime() - Date.now()) / 3600000;
-          const areaReagendar = wrap.querySelector(`#mc-reagendar-puntual-area-${c.id}`);
-          if (horasFaltantes < 24) {
-            areaReagendar.innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu sesión. <a href="https://wa.me/${KATHIA_WHATSAPP}?text=Hola%20Kathia%2C%20necesito%20reagendar%20mi%20sesión." target="_blank" rel="noopener">Escríbele a Kathia por WhatsApp</a>.</div>`;
-            return;
-          }
-          areaReagendar.innerHTML = `<div class="loading">Cargando horarios libres...</div>`;
-          try {
-            const resp = await fetch('/.netlify/functions/horarios-disponibles?dias=30');
-            const data = await resp.json();
-            if (!data.ok) {
-              areaReagendar.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios${data.mensaje ? ': ' + data.mensaje : '.'}</div>`;
-              return;
-            }
-            construirCalendarioHorarios(areaReagendar, data.slots || {}, async (b, isoTime) => {
-              if (!confirm('¿Cambiar esta sesión a ese nuevo horario?')) return;
-              b.disabled = true;
-              const original = b.textContent;
-              b.textContent = 'Cambiando...';
-              try {
-                const { data: { session } } = await supa.auth.getSession();
-                const resp2 = await fetch('/.netlify/functions/reagendar-cita', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ citaId: c.id, nuevoInicioUTC: isoTime }),
-                });
-                const resultado = await resp2.json();
-                if (!resultado.ok) { alert('No se pudo reagendar: ' + resultado.mensaje); b.disabled = false; b.textContent = original; return; }
-                alert('¡Listo! Tu sesión quedó reagendada.');
-                init();
-              } catch (err) {
-                alert('No se pudo reagendar: ' + err.message);
-                b.disabled = false; b.textContent = original;
-              }
-            });
-          } catch (err) {
-            areaReagendar.innerHTML = `<div class="empty-state">No se pudieron cargar los horarios: ${err.message}</div>`;
-          }
-        });
-      });
-
-      // Sesiones de horario fijo: reagendar (cambia el horario fijo desde
-      // esa fecha en adelante), cancelar (solo esta) o cancelar todo el
-      // horario fijo (la serie completa).
+      // Clases de horario fijo: reagendar (cambia el horario fijo desde
+      // esa fecha en adelante), cancelar por emergencia (solo esta) o
+      // cancelar todo el horario fijo (la serie completa).
       citas.filter(c => c.horario_fijo_id != null).forEach(c => {
         const h = horariosFijos.find(x => x.id === c.horario_fijo_id);
         if (!h) return;
@@ -448,7 +310,7 @@
         if (btnReagendar) {
           btnReagendar.addEventListener('click', () => {
             if (horasFaltantes() < 24) {
-              wrap.querySelector(`#mc-reagendar-area-${c.id}`).innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu sesión. <a href="https://wa.me/${KATHIA_WHATSAPP}?text=Hola%20Kathia%2C%20necesito%20reagendar%20mi%20sesión." target="_blank" rel="noopener">Escríbele a Kathia por WhatsApp</a>.</div>`;
+              wrap.querySelector(`#mc-reagendar-area-${c.id}`).innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu clase. Escríbele a Kathia por WhatsApp.</div>`;
               return;
             }
             cargarSelectorHorarios(`mc-reagendar-area-${c.id}`, { reemplazar: true, horarioFijoId: h.id });
@@ -458,7 +320,11 @@
         const btnCancelarEmergencia = wrap.querySelector(`#mc-cancelar-emergencia-${c.id}`);
         if (btnCancelarEmergencia) {
           btnCancelarEmergencia.addEventListener('click', async () => {
-            if (!confirm('¿Cancelar esta sesión?')) return;
+            const esHoy = c.fecha === hoyStr;
+            const aviso = esHoy
+              ? '¿Cancelar esta clase? Como es hoy mismo, la sesión se cobra igual según la política. ¿Confirmas la cancelación de emergencia?'
+              : '¿Cancelar esta clase por emergencia?';
+            if (!confirm(aviso)) return;
             try {
               const { data: { session } } = await supa.auth.getSession();
               const resp = await fetch('/.netlify/functions/cancelar-cita', {
@@ -468,7 +334,7 @@
               });
               const resultado = await resp.json();
               if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
-              alert('Tu sesión quedó cancelada.');
+              alert('Tu clase quedó cancelada.');
               init();
             } catch (err) {
               alert('No se pudo cancelar: ' + err.message);
@@ -479,7 +345,7 @@
         const btnCancelarSerie = wrap.querySelector(`#mc-cancelar-serie-${c.id}`);
         if (btnCancelarSerie) {
           btnCancelarSerie.addEventListener('click', async () => {
-            const aviso = `¿Seguro que quieres cancelar tu horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}?\n\nSe cancelan tus próximas sesiones automáticas en ese horario. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.`;
+            const aviso = `¿Seguro que quieres cancelar tu horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}?\n\nSe cancelan tus próximas clases automáticas en ese horario. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.`;
             if (!confirm(aviso)) return;
             const areaSerie = wrap.querySelector(`#mc-cancelar-serie-area-${c.id}`);
             areaSerie.innerHTML = `<div class="loading">Cancelando este horario...</div>`;
@@ -507,7 +373,7 @@
     render();
   }
 
-  // Carga el selector de horarios libres para agendar una sesión suelta
+  // Carga el selector de horarios libres para agendar una clase suelta
   // ("puntual"): no crea horario fijo, solo una cita individual además
   // de lo que ya tenga agendado.
   async function cargarSelectorClasePuntual(areaId) {
@@ -523,7 +389,7 @@
       }
       construirCalendarioHorarios(area, data.slots || {}, async (b, isoTime) => {
         const { diaSemana, hora } = limaDiaHora(isoTime);
-        if (!confirm(`¿Agendar una sesión adicional el ${nombreDia(diaSemana)} a las ${fmtHora12(hora)}? Es una sesión suelta — no cambia tu horario fijo.`)) return;
+        if (!confirm(`¿Agendar una clase adicional el ${nombreDia(diaSemana)} a las ${fmtHora12(hora)}? Es una sesión suelta — no cambia tu horario fijo.`)) return;
         b.disabled = true;
         const original = b.textContent;
         b.textContent = 'Agendando...';
@@ -541,7 +407,8 @@
             b.textContent = original;
             return;
           }
-          mostrarConfirmacionCita(area, '¡Listo! Tu sesión adicional quedó agendada.', { inicioISO: isoTime, direccion: miPerfilDireccion, tipo: 'puntual' });
+          alert('¡Listo! Tu clase adicional quedó agendada.');
+          init();
         } catch (err) {
           alert('No se pudo agendar: ' + err.message);
           b.disabled = false;
@@ -553,56 +420,7 @@
     }
   }
 
-  // Cuando la alumna TODAVÍA no tiene ningún horario fijo, primero elige
-  // entre horario fijo semanal o sesión puntual, y solo se carga/muestra
-  // ese — así no se puede confundir uno con otro sin querer.
-  function wireTipoSesionChooser() {
-    const btnFijo = document.getElementById('btn-tipo-fijo');
-    const btnPuntual = document.getElementById('btn-tipo-puntual');
-    const contenido = document.getElementById('tipo-sesion-contenido');
-    if (!btnFijo || !btnPuntual || !contenido) return;
-
-    function marcarActivo(btnActivo) {
-      [btnFijo, btnPuntual].forEach(b => {
-        const activo = b === btnActivo;
-        b.style.background = activo ? 'var(--acento)' : '';
-        b.style.color = activo ? '#fff' : '';
-        b.style.borderColor = activo ? 'var(--acento)' : '';
-      });
-    }
-
-    function mostrarFijo() {
-      marcarActivo(btnFijo);
-      contenido.innerHTML = `
-        <p class="panel-sub">Elige uno de los horarios que Kathia tiene libres — quedará como tu sesión fija de cada semana, de forma indefinida. No tienes que volver a agendar mes a mes: el sistema te va agregando fechas nuevas automáticamente.</p>
-        <div id="elegir-horario-area"><div class="loading">Cargando horarios libres...</div></div>
-      `;
-      cargarSelectorHorarios('elegir-horario-area');
-    }
-
-    function mostrarPuntual() {
-      marcarActivo(btnPuntual);
-      contenido.innerHTML = `
-        <p class="panel-sub">Agenda una sola sesión suelta, sin comprometerte a un horario fijo cada semana.</p>
-        <div id="agendar-puntual-area"><div class="loading">Cargando horarios libres...</div></div>
-      `;
-      cargarSelectorClasePuntual('agendar-puntual-area');
-    }
-
-    btnFijo.addEventListener('click', mostrarFijo);
-    btnPuntual.addEventListener('click', mostrarPuntual);
-
-    // Los botones "Agendar horario fijo"/"Agendar sesión puntual" del
-    // dashboard de Inicio (cuando la alumna todavía no tiene ninguna
-    // sesión) llevan directo a la opción elegida, sin obligarla a
-    // volver a elegir acá.
-    window.__mostrarTipoFijo = mostrarFijo;
-    window.__mostrarTipoPuntual = mostrarPuntual;
-  }
-
-  // Conecta el botón "Agendar una sesión adicional (puntual)" — se usa
-  // solo dentro del calendario de horario fijo (cuando la alumna YA
-  // tiene uno), para agregar una sesión suelta además del horario fijo.
+  // Conecta el botón "Agendar una clase adicional (puntual)".
   function wireAgendarPuntual() {
     const btn = document.getElementById('btn-agendar-puntual');
     const area = document.getElementById('agendar-puntual-area');
@@ -618,11 +436,11 @@
   }
 
   // Calendario mensual del horario fijo: marca los días que ya tienen
-  // una sesión fija agendada. Al elegir un día, muestra esa sesión con
+  // una clase fija agendada. Al elegir un día, muestra esa clase con
   // sus 3 acciones — reagendar (cambia el horario fijo desde ahí en
-  // adelante), cancelar (solo esa sesión) o cancelar todo el horario
-  // fijo (la serie completa). citasFijasPorDia es
-  // { 'YYYY-MM-DD': [{id, fecha, hora, horario_fijo_id}] }.
+  // adelante), cancelar por emergencia (solo esa sesión puntual) o
+  // cancelar todo el horario fijo (la serie completa). citasFijasPorDia
+  // es { 'YYYY-MM-DD': [{id, fecha, hora, horario_fijo_id}] }.
   function construirCalendarioHorarioFijo(area, citasFijasPorDia, horariosFijos) {
     const hoyLima = new Date(Date.now() - 5 * 3600000);
     const hoyStr = hoyLima.toISOString().slice(0, 10);
@@ -646,10 +464,10 @@
         }
         const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
         const tieneCita = !!(citasFijasPorDia[fechaStr] && citasFijasPorDia[fechaStr].length);
-        const sesiones = ['cal-celda', tieneCita ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
-        if (fechaStr === diaSeleccionado) sesiones.push('cal-celda-activa');
-        if (fechaStr === hoyStr) sesiones.push('cal-celda-hoy');
-        celdas += `<button type="button" class="${sesiones.join(' ')}" data-fecha="${fechaStr}"${tieneCita ? '' : ' disabled'}>${numDia}${tieneCita ? '<span class="cal-punto"></span>' : ''}</button>`;
+        const clases = ['cal-celda', tieneCita ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneCita ? '' : ' disabled'}>${numDia}${tieneCita ? '<span class="cal-punto"></span>' : ''}</button>`;
       }
 
       area.innerHTML = `
@@ -663,17 +481,7 @@
             <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
             <div class="cal-celdas">${celdas}</div>
           </div>
-          <div class="cal-horas-col">
-            <div id="hf-detalle-wrap"></div>
-            <div id="hf-acciones-extra" style="margin-top:18px; padding-top:14px; border-top:1px solid var(--linea);">
-              <span class="back-link" id="btn-agregar-horario" title="Elegir otro día y hora, además de los que ya tienes">➕ Agregar otro horario fijo</span>
-              <div id="agregar-horario-area" style="margin-top:12px; display:none;"></div>
-              <div style="margin-top:14px; padding-top:14px; border-top:1px solid var(--linea);">
-                <span class="back-link" id="btn-agendar-puntual" title="Agendar una sesión suelta, además de tu horario fijo">➕ Agendar una sesión adicional (puntual)</span>
-                <div id="agendar-puntual-area" style="margin-top:12px; display:none;"></div>
-              </div>
-            </div>
-          </div>
+          <div class="cal-horas-col" id="hf-detalle-wrap"></div>
         </div>
       `;
 
@@ -692,23 +500,19 @@
       });
 
       renderDetalle();
-      // El calendario se reconstruye entero en cada render() (mes u hora
-      // seleccionada), así que hay que reconectar estos dos botones cada vez.
-      wireAgregarHorario();
-      wireAgendarPuntual();
     }
 
     function renderDetalle() {
       const wrap = area.querySelector('#hf-detalle-wrap');
       if (!wrap) return;
       if (!diaSeleccionado) {
-        wrap.innerHTML = `<div class="empty-state">Elige un día marcado para reagendar o cancelar esa sesión.</div>`;
+        wrap.innerHTML = `<div class="empty-state">Elige un día marcado para reagendar o cancelar esa clase.</div>`;
         return;
       }
       const cita = (citasFijasPorDia[diaSeleccionado] || [])[0];
       const h = cita && horariosFijos.find(x => x.id === cita.horario_fijo_id);
       if (!cita || !h) {
-        wrap.innerHTML = `<div class="empty-state">No se encontró esa sesión.</div>`;
+        wrap.innerHTML = `<div class="empty-state">No se encontró esa clase.</div>`;
         return;
       }
       const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
@@ -718,11 +522,11 @@
         <div class="horario-card-titulo" style="margin-bottom:10px;">${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}, cada semana</div>
         <div style="display:flex; gap:10px; flex-wrap:wrap;">
           <button class="btn-sm" type="button" id="hf-reagendar" title="Cambiar tu horario fijo a otro día u hora libre (hasta 1 día antes)">↻ Reagendar</button>
-          <button class="btn-sm btn-sm-danger" type="button" id="hf-cancelar-emergencia" title="Cancelar esta sesión">✕ Cancelar sesión</button>
+          <button class="btn-sm btn-sm-danger" type="button" id="hf-cancelar-emergencia" title="Cancelar esta clase. Si es el mismo día, se cobra igual">✕ Cancelar por emergencia</button>
         </div>
         <div id="hf-reagendar-area" style="margin-top:10px;"></div>
         <div style="margin-top:14px; padding-top:12px; border-top:1px solid var(--linea);">
-          <span class="back-link back-link-danger" id="hf-cancelar-serie" title="Deja de tener esta sesión fija cada semana">🛑 Cancelar este horario fijo</span>
+          <span class="back-link back-link-danger" id="hf-cancelar-serie" title="Deja de tener esta clase fija cada semana">🛑 Cancelar este horario fijo</span>
           <div id="hf-cancelar-serie-area" style="margin-top:10px;"></div>
         </div>
       `;
@@ -734,14 +538,18 @@
 
       wrap.querySelector('#hf-reagendar').addEventListener('click', () => {
         if (horasFaltantes() < 24) {
-          wrap.querySelector('#hf-reagendar-area').innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu sesión. <a href="https://wa.me/${KATHIA_WHATSAPP}?text=Hola%20Kathia%2C%20necesito%20reagendar%20mi%20sesión." target="_blank" rel="noopener">Escríbele a Kathia por WhatsApp</a>.</div>`;
+          wrap.querySelector('#hf-reagendar-area').innerHTML = `<div class="empty-state">Ya no se puede reagendar: falta menos de 1 día para tu clase. Escríbele a Kathia por WhatsApp.</div>`;
           return;
         }
         cargarSelectorHorarios('hf-reagendar-area', { reemplazar: true, horarioFijoId: h.id });
       });
 
       wrap.querySelector('#hf-cancelar-emergencia').addEventListener('click', async () => {
-        if (!confirm('¿Cancelar esta sesión?')) return;
+        const esHoy = cita.fecha === hoyStr;
+        const aviso = esHoy
+          ? '¿Cancelar esta clase? Como es hoy mismo, la sesión se cobra igual según la política. ¿Confirmas la cancelación de emergencia?'
+          : '¿Cancelar esta clase por emergencia?';
+        if (!confirm(aviso)) return;
         try {
           const { data: { session } } = await supa.auth.getSession();
           const resp = await fetch('/.netlify/functions/cancelar-cita', {
@@ -751,7 +559,7 @@
           });
           const resultado = await resp.json();
           if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
-          alert('Tu sesión quedó cancelada.');
+          alert('Tu clase quedó cancelada.');
           init();
         } catch (err) {
           alert('No se pudo cancelar: ' + err.message);
@@ -759,7 +567,7 @@
       });
 
       wrap.querySelector('#hf-cancelar-serie').addEventListener('click', async () => {
-        const aviso = `¿Seguro que quieres cancelar tu horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}?\n\nSe cancelan tus próximas sesiones automáticas en ese horario. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.`;
+        const aviso = `¿Seguro que quieres cancelar tu horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}?\n\nSe cancelan tus próximas clases automáticas en ese horario. Si más adelante quieres retomarlo, puedes elegir un horario nuevo desde aquí mismo.`;
         if (!confirm(aviso)) return;
         const areaSerie = wrap.querySelector('#hf-cancelar-serie-area');
         areaSerie.innerHTML = `<div class="loading">Cancelando este horario...</div>`;
@@ -800,7 +608,8 @@
   // que la alumna elija uno como horario fijo. Se usa tanto para agregar
   // uno nuevo (el primero, o uno más además de los que ya tiene) como,
   // con opciones.reemplazar = true + opciones.horarioFijoId, para
-  // cambiar un horario que ya existe.
+  // cambiar un horario puntual que ya existe (desde el recordatorio
+  // suave o el botón "Cambiar" de esa tarjeta).
   async function cargarSelectorHorarios(areaId, opciones) {
     opciones = opciones || {};
     const area = document.getElementById(areaId);
@@ -826,7 +635,7 @@
           const { data: { session } } = await supa.auth.getSession();
           // Mandamos también la fecha exacta que la alumna eligió en el
           // calendario (no solo el día de la semana), para que la primera
-          // sesión se cree ahí y no en la próxima ocurrencia de ese día
+          // clase se cree ahí y no en la próxima ocurrencia de ese día
           // desde hoy (que puede ser una fecha distinta, más cercana).
           const payload = { diaSemana, hora, inicioISO: isoTime };
           if (opciones.reemplazar) {
@@ -845,8 +654,8 @@
             b.textContent = original;
             return;
           }
-          const mensajeExito = opciones.reemplazar ? '¡Listo! Ese horario quedó actualizado.' : '¡Listo! Ese quedó como uno de tus horarios fijos de cada semana.';
-          mostrarConfirmacionCita(area, mensajeExito, { inicioISO: isoTime, direccion: miPerfilDireccion, tipo: 'fija' });
+          alert(opciones.reemplazar ? '¡Listo! Ese horario quedó actualizado.' : '¡Listo! Ese quedó como uno de tus horarios fijos de cada semana.');
+          init();
         } catch (err) {
           alert('No se pudo guardar tu horario: ' + err.message);
           b.disabled = false;
@@ -930,19 +739,15 @@
 
     const user = session.user;
 
-    // Perfil de la alumna (nombre + si es admin + meta de peso + dirección
-    // + preferencia de correos de Google Calendar).
+    // Perfil de la alumna (nombre + si es admin + meta de peso)
     const { data: perfil } = await supa
       .from('alumnas')
-      .select('nombre, es_admin, peso_objetivo, direccion, recibir_invites_calendario')
+      .select('nombre, es_admin, peso_objetivo, estatura_cm')
       .eq('id', user.id)
       .single();
 
-    // Las administradoras no ven este portal — van directo a su propio panel.
+    // Las administradoras no ven este portal — van directo a su propio panel
     if (perfil && perfil.es_admin) { window.location.href = 'admin.html'; return; }
-
-    miPerfilNombre = (perfil && perfil.nombre) ? perfil.nombre : user.email;
-    miPerfilDireccion = perfil && perfil.direccion || null;
 
     const nombre = (perfil && perfil.nombre) ? perfil.nombre : user.email;
 
@@ -963,9 +768,9 @@
     const hoyStr = new Date().toISOString().slice(0, 10);
     const hoyLima = new Date(Date.now() - 5 * 3600000).toISOString().slice(0, 10);
 
-    // Todas sus citas programadas —de horario fijo Y sesiones adicionales
+    // Todas sus citas programadas —de horario fijo Y clases adicionales
     // sueltas ("puntuales")— en una sola consulta. De acá sale tanto la
-    // próxima cita de cada horario como el calendario de "tus sesiones
+    // próxima cita de cada horario como el calendario de "tus clases
     // este mes" y la tarjeta resumen de arriba.
     const { data: misCitasData } = await supa
       .from('citas_fijas')
@@ -990,7 +795,7 @@
     const proximaCitaGeneral = todasMisCitas[0] || null;
     const hayRecordatorioPendiente = horariosFijos.some(h => h.mostrarRecordatorio);
 
-    // Agrupadas por día, para el calendario de "tus sesiones este mes"
+    // Agrupadas por día, para el calendario de "tus clases este mes"
     // (landing, todas) y el calendario del horario fijo (solo esas).
     const citasPorDia = {};
     const citasFijasPorDia = {};
@@ -1002,10 +807,10 @@
     });
     const proximaCitaFijaGeneral = todasMisCitas.find(c => c.horario_fijo_id != null) || null;
 
-    // Su progreso (peso, cintura, cadera), más reciente primero.
+    // Su progreso, más reciente primero
     const { data: progreso, error: progresoError } = await supa
       .from('progreso')
-      .select('fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
+      .select('fecha, peso_kg, medidas, notas, foto_path, animo')
       .eq('alumna_id', user.id)
       .order('fecha', { ascending: false });
 
@@ -1021,11 +826,10 @@
     } else if (!progreso || progreso.length === 0) {
       progresoHTML = `<div class="empty-state">Todavía no hay registros. Kathia irá agregando tus mediciones después de cada evaluación.</div>`;
     } else {
+      // Línea de tiempo, tarjeta por sesión
       progresoHTML = `<div class="timeline">` + progreso.map(p => {
         const chips = [];
         if (p.peso_kg != null) chips.push(`<span class="chip">⚖️ ${p.peso_kg} kg</span>`);
-        if (p.cintura_cm != null) chips.push(`<span class="chip">📏 Cintura ${p.cintura_cm} cm</span>`);
-        if (p.cadera_cm != null) chips.push(`<span class="chip">📏 Cadera ${p.cadera_cm} cm</span>`);
         const nota = p.notas || p.medidas;
         return `
           <div class="timeline-item">
@@ -1044,14 +848,13 @@
       const cronologico = [...progreso].reverse();
       const metricas = [
         { id: 'peso-chart', label: 'Peso', unidad: 'kg', key: 'peso_kg', icon: '⚖️' },
-        { id: 'cintura-chart', label: 'Cintura', unidad: 'cm', key: 'cintura_cm', icon: '📏' },
-        { id: 'cadera-chart', label: 'Cadera', unidad: 'cm', key: 'cadera_cm', icon: '📏' },
       ];
       metricas.forEach(m => {
         const serie = cronologico.filter(p => p[m.key] != null);
         if (serie.length >= 2) charts.push({ ...m, serie });
       });
 
+      // Tarjetas "Inicio → Ahora" por métrica
       let statCardsHTML = '';
       if (charts.length) {
         statCardsHTML = charts.map(c => {
@@ -1070,6 +873,7 @@
         }).join('');
       }
 
+      // Gráficos de línea (evolución en el tiempo)
       if (charts.length) {
         chartsHTML = `<div class="charts-grid">` + charts.map(c =>
           `<div class="chart-card"><canvas id="${c.id}" height="150"></canvas></div>`
@@ -1112,8 +916,17 @@
       }
     }
 
-    // Último registro — para la tarjeta resumen de progreso.
-    const ultimoRegistro = (progreso && progreso.length) ? progreso[0] : null;
+    // Peso más reciente y más antiguo (progreso viene ordenado del más
+    // nuevo al más viejo) — para la tarjeta resumen de progreso: peso
+    // actual, cuánto cambió desde el inicio, IMC y avance hacia su meta.
+    // Mismo cálculo de IMC que usa Kathia en su panel — sin fecha de
+    // nacimiento, que no corresponde mostrar acá.
+    const registrosConPeso = (progreso || []).filter(p => p.peso_kg != null);
+    const ultimoPeso = registrosConPeso.length ? registrosConPeso[0].peso_kg : null;
+    const pesoInicialReg = registrosConPeso.length ? registrosConPeso[registrosConPeso.length - 1].peso_kg : null;
+    const deltaPesoResumen = (registrosConPeso.length >= 2 && ultimoPeso != null && pesoInicialReg != null)
+      ? ultimoPeso - pesoInicialReg : null;
+    const imcResumen = imcFor(ultimoPeso, perfil && perfil.estatura_cm);
 
     // Cuántas de sus citas (fijas o puntuales) caen este mes — para la
     // tercera tarjeta resumen.
@@ -1122,50 +935,49 @@
     const clasesEsteMes = todasMisCitas.filter(c => c.fecha.slice(0, 7) === mesActualStr).length;
 
     // Tarjetas resumen del landing: de un vistazo, sin entrar a ninguna
-    // pestaña, la alumna ve cuándo es su próxima sesión, su último
-    // registro y cuántas sesiones le quedan este mes. Cada una lleva a
+    // pestaña, la alumna ve cuándo es su próxima clase, su último peso
+    // registrado y cuántas clases le quedan este mes. Cada una lleva a
     // la pestaña correspondiente si quiere ver el detalle completo.
     const resumenHTML = `
       <div class="resumen-cards">
-        <div class="resumen-card resumen-card--destacada" id="resumen-proxima" role="button" tabindex="0" title="Ver o agendar tu sesión">
+        <div class="resumen-card resumen-card--destacada" id="resumen-proxima" role="button" tabindex="0" title="Ver o agendar tu clase">
           <div class="resumen-icon">🗓️</div>
-          <div class="resumen-label">Próxima sesión</div>
+          <div class="resumen-label">Próxima clase</div>
           <div class="resumen-valor">${proximaCitaGeneral
             ? `${fmtFecha(proximaCitaGeneral.fecha, { conDia: true })}<br>${fmtHora12(proximaCitaGeneral.hora)}`
-            : 'Aún no tienes una sesión fija agendada'}</div>
+            : 'Aún no tienes una clase fija agendada'}</div>
         </div>
         <div class="resumen-card" id="resumen-progreso" role="button" tabindex="0" title="Ver tu progreso completo">
           <div class="resumen-icon">📊</div>
           <div class="resumen-label">Tu progreso</div>
-          <div class="resumen-valor">${ultimoRegistro ? fmtFecha(ultimoRegistro.fecha) : 'Sin registros aún'}</div>
-          ${ultimoRegistro && ultimoRegistro.peso_kg != null ? `
+          <div class="resumen-valor">${ultimoPeso != null ? `${ultimoPeso} kg` : 'Sin registros aún'}</div>
+          ${(deltaPesoResumen != null || imcResumen || (perfil && perfil.peso_objetivo != null && ultimoPeso != null)) ? `
             <div class="resumen-detalle">
-              <div>⚖️ ${ultimoRegistro.peso_kg} kg</div>
+              ${deltaPesoResumen != null ? `<div>${deltaPesoResumen <= 0 ? '↓' : '↑'} ${Math.abs(deltaPesoResumen).toFixed(1)} kg desde tu inicio</div>` : ''}
+              ${imcResumen ? `<div>IMC ${imcResumen.valor} · ${imcResumen.categoria}</div>` : ''}
+              ${(perfil && perfil.peso_objetivo != null && ultimoPeso != null) ? `<div>${Math.abs(ultimoPeso - perfil.peso_objetivo) < 0.5 ? '🎯 Meta lograda' : `Meta: faltan ${Math.abs(ultimoPeso - perfil.peso_objetivo).toFixed(1)} kg`}</div>` : ''}
             </div>
           ` : ''}
         </div>
-        <div class="resumen-card" id="resumen-sesiones-mes" role="button" tabindex="0" title="Ver tus sesiones del mes">
+        <div class="resumen-card" id="resumen-clases-mes" role="button" tabindex="0" title="Ver tus clases del mes">
           <div class="resumen-icon">📆</div>
-          <div class="resumen-label">Sesiones restantes este mes</div>
+          <div class="resumen-label">Clases restantes este mes</div>
           <div class="resumen-valor">${clasesEsteMes}</div>
         </div>
       </div>
     `;
 
-    // El calendario de "tus sesiones este mes" vive en el dashboard de
+    // El calendario de "tus clases este mes" vive en el dashboard de
     // inicio — pero solo tiene sentido mostrarlo si ya hay algo agendado.
     // Si no, invita a agendar en su lugar.
     const misClasesMesHTML = todasMisCitas.length ? `
-      <h3 style="margin-bottom:4px;">🗓️ Tus sesiones este mes</h3>
-      <p class="panel-sub">Todas tus sesiones programadas — las de tu horario fijo y las adicionales.</p>
-      <div id="mis-citas-calendario"><div class="loading">Cargando tus sesiones...</div></div>
+      <h3 style="margin-bottom:4px;">🗓️ Tus clases este mes</h3>
+      <p class="panel-sub">Todas tus clases programadas — las de tu horario fijo y las adicionales.</p>
+      <div id="mis-citas-calendario"><div class="loading">Cargando tus clases...</div></div>
     ` : `
       <div class="cta-agendar">
-        <p>Aún no tienes ninguna sesión agendada.</p>
-        <div style="display:flex; gap:10px; flex-wrap:wrap; justify-content:center;">
-          <button type="button" id="btn-cta-agendar-fijo" class="btn-sm" style="background:var(--acento); color:#fff; border-color:var(--acento);" title="Un mismo día y hora cada semana, de forma indefinida">📅 Agendar horario fijo</button>
-          <button type="button" id="btn-cta-agendar-puntual" class="btn-sm" title="Una sola sesión suelta, sin comprometerte a un horario semanal">➕ Agendar sesión puntual</button>
-        </div>
+        <p>Aún no tienes ninguna clase agendada.</p>
+        <button type="button" id="btn-cta-agendar" class="btn-sm" style="background:var(--acento); color:#fff; border-color:var(--acento);">📅 Agendar mi primera clase</button>
       </div>
     `;
 
@@ -1178,7 +990,7 @@
       <div class="portal-tabs" role="tablist">
         <button type="button" class="portal-tab active" id="tab-inicio" role="tab" aria-selected="true" title="Tu resumen y calendario">🏠 Inicio</button>
         <button type="button" class="portal-tab" id="tab-progreso" role="tab" aria-selected="false" title="Ver tu peso, medidas y avance a lo largo del tiempo">📊 Mi progreso</button>
-        <button type="button" class="portal-tab" id="tab-horario" role="tab" aria-selected="false" title="Agendar una sesión, ver tu horario fijo, reagendar o cancelar">📅 Agendar Sesión${(!horariosFijos.length || hayRecordatorioPendiente) ? '<span class="tab-dot" title="Necesita tu atención"></span>' : ''}</button>
+        <button type="button" class="portal-tab" id="tab-horario" role="tab" aria-selected="false" title="Agendar una clase, ver tu horario fijo, reagendar o cancelar">📅 Agendar Clase${(!horariosFijos.length || hayRecordatorioPendiente) ? '<span class="tab-dot" title="Necesita tu atención"></span>' : ''}</button>
       </div>
 
       <section class="block panel-tab" id="panel-inicio">
@@ -1190,18 +1002,11 @@
             ${misClasesMesHTML}
           </div>
         </div>
-
-        <div style="margin-top:22px; padding-top:16px; border-top:1px solid var(--linea);">
-          <label style="display:flex; align-items:flex-start; gap:8px; cursor:pointer; font-size:13.5px; color:var(--texto-suave);">
-            <input type="checkbox" id="chk-recibir-invites" style="width:auto; margin-top:2px;"${perfil && perfil.recibir_invites_calendario ? ' checked' : ''}>
-            <span>Recibir también un correo automático de Google Calendar por cada sesión (invitación, cambio de horario o cancelación). Sin marcar esto, solo te avisamos por WhatsApp y desde acá.</span>
-          </label>
-        </div>
       </section>
 
       <section class="block panel-tab" id="panel-progreso" style="display:none;">
         <h3>📊 Tu progreso</h3>
-        <p class="panel-sub">Así ha ido cada una de tus sesiones con Kathia.</p>
+        <p class="panel-sub">Así ha ido cambiando tu progreso, sesión a sesión.</p>
         ${metaHTML}
         ${chartsHTML}
         ${progresoHTML}
@@ -1210,7 +1015,7 @@
       <section class="block panel-tab" id="panel-horario" style="display:none;">
         ${horariosFijos.length ? `
           <h3>📅 Tu horario fijo</h3>
-          <p class="panel-sub">${horariosFijos.length === 1 ? '1 sesión fija por semana.' : horariosFijos.length + ' sesiones fijas por semana.'}</p>
+          <p class="panel-sub">${horariosFijos.length === 1 ? '1 clase fija por semana.' : horariosFijos.length + ' clases fijas por semana.'}</p>
 
           ${horariosFijos.filter(h => h.mostrarRecordatorio).map(h => `
             <div class="meta-box" style="margin-bottom:14px;">
@@ -1234,18 +1039,24 @@
             <div id="cambiar-horario-area-${h.id}" style="margin-bottom:14px; display:none;"></div>
           `).join('')}
 
-          ${proximaCitaFijaGeneral ? `<div class="semana-proxima">🗓️ <strong>Tu próxima sesión fija es:</strong>&nbsp;${fmtFecha(proximaCitaFijaGeneral.fecha, { conDia: true })} · ${fmtHora12(proximaCitaFijaGeneral.hora)}</div>` : ''}
+          ${proximaCitaFijaGeneral ? `<div class="semana-proxima">🗓️ <strong>Tu próxima clase fija es:</strong>&nbsp;${fmtFecha(proximaCitaFijaGeneral.fecha, { conDia: true })} · ${fmtHora12(proximaCitaFijaGeneral.hora)}</div>` : ''}
 
           <div id="calendario-horario-fijo" style="margin-top:16px;"><div class="loading">Cargando tu calendario...</div></div>
-        ` : `
-          <h3>📅 Agendar Sesión</h3>
-          <p class="panel-sub">Primero elige qué tipo de sesión quieres agendar — son dos cosas distintas, así que solo se muestra una a la vez.</p>
-          <div class="tipo-sesion-chooser" style="display:flex; gap:10px; flex-wrap:wrap; margin-bottom:20px;">
-            <button type="button" id="btn-tipo-fijo" class="btn-sm" title="Un mismo día y hora cada semana, de forma indefinida">📅 Horario fijo semanal</button>
-            <button type="button" id="btn-tipo-puntual" class="btn-sm" title="Una sola sesión suelta, sin comprometerte a un horario semanal">➕ Sesión puntual</button>
+
+          <div style="margin-top:18px;">
+            <span class="back-link" id="btn-agregar-horario" title="Elegir otro día y hora, además de los que ya tienes">➕ Agregar otro horario fijo</span>
+            <div id="agregar-horario-area" style="margin-top:12px; display:none;"></div>
           </div>
-          <div id="tipo-sesion-contenido"></div>
+        ` : `
+          <h3>📅 Elige tu horario fijo semanal</h3>
+          <p class="panel-sub">Elige uno de los horarios que Kathia tiene libres — quedará como tu clase fija de cada semana, sin que tengas que volver a agendar. Más adelante podrás agregar otro, reagendar o cancelar cada sesión si lo necesitas.</p>
+          <div id="elegir-horario-area"><div class="loading">Cargando horarios libres...</div></div>
         `}
+
+        <div style="margin-top:28px; padding-top:20px; border-top:1px solid var(--linea);">
+          <span class="back-link" id="btn-agendar-puntual" title="Agendar una clase suelta, además de tu horario fijo">➕ Agendar una clase adicional (puntual)</span>
+          <div id="agendar-puntual-area" style="margin-top:12px; display:none;"></div>
+        </div>
       </section>
     `;
 
@@ -1272,7 +1083,7 @@
 
     // Las tarjetas resumen del landing también llevan a su pestaña —
     // click o Enter/Espacio (son role="button").
-    [['resumen-proxima', 'horario'], ['resumen-progreso', 'progreso'], ['resumen-sesiones-mes', 'horario']].forEach(([id, tab]) => {
+    [['resumen-proxima', 'horario'], ['resumen-progreso', 'progreso'], ['resumen-clases-mes', 'horario']].forEach(([id, tab]) => {
       const card = document.getElementById(id);
       if (!card) return;
       card.addEventListener('click', () => activarTabPortal(tab));
@@ -1281,54 +1092,26 @@
       });
     });
 
-    // Preferencia de recibir el correo automático de Google Calendar.
-    const chkRecibirInvites = document.getElementById('chk-recibir-invites');
-    if (chkRecibirInvites) {
-      chkRecibirInvites.addEventListener('change', async () => {
-        const valor = chkRecibirInvites.checked;
-        chkRecibirInvites.disabled = true;
-        const { error } = await supa.from('alumnas').update({ recibir_invites_calendario: valor }).eq('id', user.id);
-        chkRecibirInvites.disabled = false;
-        if (error) {
-          chkRecibirInvites.checked = !valor;
-          alert('No se pudo guardar tu preferencia: ' + error.message);
-        }
-      });
-    }
-
-    // El calendario de "tus sesiones este mes" solo existe en el DOM si ya
+    // El calendario de "tus clases este mes" solo existe en el DOM si ya
     // hay algo agendado; si no, lo que hay es el botón de invitación.
     if (todasMisCitas.length) {
       construirCalendarioMisClases(document.getElementById('mis-citas-calendario'), citasPorDia, horariosFijos);
     } else {
-      const btnCtaFijo = document.getElementById('btn-cta-agendar-fijo');
-      if (btnCtaFijo) btnCtaFijo.addEventListener('click', () => {
-        activarTabPortal('horario');
-        if (window.__mostrarTipoFijo) window.__mostrarTipoFijo();
-      });
-      const btnCtaPuntual = document.getElementById('btn-cta-agendar-puntual');
-      if (btnCtaPuntual) btnCtaPuntual.addEventListener('click', () => {
-        activarTabPortal('horario');
-        if (window.__mostrarTipoPuntual) window.__mostrarTipoPuntual();
-      });
+      const btnCta = document.getElementById('btn-cta-agendar');
+      if (btnCta) btnCta.addEventListener('click', () => activarTabPortal('horario'));
     }
+    wireAgendarPuntual();
 
-    // Cuando hay horario fijo, "Agregar otro horario" y "Agendar sesión
-    // puntual" viven dentro del widget de calendario (construirCalendarioHorarioFijo
-    // los conecta él mismo, porque se reconstruyen cada vez que cambia el
-    // mes o el día seleccionado). Cuando todavía no hay horario fijo, hay
-    // que mostrar primero el elector de tipo de sesión.
     if (horariosFijos.length) {
       construirCalendarioHorarioFijo(document.getElementById('calendario-horario-fijo'), citasFijasPorDia, horariosFijos);
       horariosFijos.forEach(h => {
         if (h.mostrarRecordatorio) wireRecordatorioHorario(h.id);
       });
+      wireAgregarHorario();
     } else {
-      wireTipoSesionChooser();
+      cargarSelectorHorarios('elegir-horario-area');
     }
 
-    // Gráficos de línea (evolución en el tiempo) — hay que crearlos
-    // después de que el HTML de arriba ya esté en el DOM.
     charts.forEach(c => {
       new Chart(document.getElementById(c.id), {
         type: 'line',

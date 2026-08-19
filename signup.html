@@ -16,28 +16,42 @@
 <div class="login-screen">
   <div class="login-card">
     <span class="wordmark">Kathia Coach<span>Especialista en musculación · Mujeres 40+</span></span>
-    <h2>Crea tu cuenta</h2>
+    <h2>¡Bienvenida! 🎉</h2>
+    <p class="signup-intro">Crea tu cuenta en un par de minutos para ver tu progreso y agendar tus sesiones.</p>
     <form id="signup-form">
-      <label for="nombre">Tu nombre</label>
-      <input type="text" id="nombre" required autocomplete="name">
+      <div class="form-section">
+        <div class="form-section-title">Sobre ti</div>
+        <label for="nombre">Tu nombre</label>
+        <input type="text" id="nombre" required autocomplete="name" placeholder="Ej. María González">
 
-      <label for="nacimiento">Fecha de nacimiento (opcional)</label>
-      <input type="date" id="nacimiento">
+        <label for="nacimiento">Fecha de nacimiento <span class="opcional">(opcional)</span></label>
+        <input type="date" id="nacimiento">
 
-      <label for="estatura">Estatura en cm (opcional)</label>
-      <input type="number" step="0.1" id="estatura" placeholder="Ej. 162">
+        <label for="estatura">Estatura en cm <span class="opcional">(opcional)</span></label>
+        <input type="number" step="0.1" id="estatura" placeholder="Ej. 162">
 
-      <label for="email">Correo</label>
-      <input type="email" id="email" required autocomplete="email">
+        <label for="peso">Peso actual en kg <span class="opcional">(opcional)</span></label>
+        <input type="number" step="0.1" id="peso" placeholder="Ej. 68.5">
+      </div>
 
-      <label for="password">Elige una contraseña</label>
-      <input type="password" id="password" required autocomplete="new-password" minlength="6">
+      <div class="form-section">
+        <div class="form-section-title">Tu cuenta</div>
+        <label for="email">Correo</label>
+        <input type="email" id="email" required autocomplete="email" placeholder="tucorreo@ejemplo.com">
 
-      <label for="password2">Repite la contraseña</label>
-      <input type="password" id="password2" required autocomplete="new-password" minlength="6">
+        <label for="password">Elige una contraseña</label>
+        <input type="password" id="password" required autocomplete="new-password" minlength="6" placeholder="Mínimo 6 caracteres">
 
-      <label for="codigo">Código de acceso</label>
-      <input type="text" id="codigo" required placeholder="Te lo pasó Kathia por WhatsApp">
+        <label for="password2">Repite la contraseña</label>
+        <input type="password" id="password2" required autocomplete="new-password" minlength="6">
+      </div>
+
+      <div class="form-section">
+        <div class="form-section-title">Último paso</div>
+        <label for="codigo">Código de acceso</label>
+        <input type="text" id="codigo" required placeholder="Ingresa el código">
+        <p class="input-hint">Te lo compartió Kathia por WhatsApp junto con este link.</p>
+      </div>
 
       <button type="submit" class="btn-primary" id="submit-btn">Crear mi cuenta</button>
     </form>
@@ -65,6 +79,7 @@
     const nombre = document.getElementById('nombre').value.trim();
     const nacimiento = document.getElementById('nacimiento').value;
     const estatura = document.getElementById('estatura').value;
+    const peso = document.getElementById('peso').value;
     const email = document.getElementById('email').value.trim();
     const password = document.getElementById('password').value;
     const password2 = document.getElementById('password2').value;
@@ -110,7 +125,17 @@
       nombre,
       fecha_nacimiento: nacimiento || null,
       estatura_cm: estatura ? parseFloat(estatura) : null,
+      revisada_por_kathia: false,
     }).eq('id', data.user.id);
+
+    // Si puso su peso actual, queda como su primer registro de progreso
+    if (peso) {
+      await supa.from('progreso').insert({
+        alumna_id: data.user.id,
+        fecha: new Date().toISOString().slice(0, 10),
+        peso_kg: parseFloat(peso),
+      });
+    }
 
     window.location.href = 'portal.html';
   });

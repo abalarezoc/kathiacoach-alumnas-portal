@@ -33,9 +33,15 @@
 <script>
   const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
 
-  // Si ya hay sesión activa, salta directo al portal
+  // A dónde debe ir cada quién según si es administradora o alumna
+  async function irAlDestino(userId) {
+    const { data: perfil } = await supa.from('alumnas').select('es_admin').eq('id', userId).single();
+    window.location.href = (perfil && perfil.es_admin) ? 'admin.html' : 'portal.html';
+  }
+
+  // Si ya hay sesión activa, salta directo a su destino
   supa.auth.getSession().then(({ data }) => {
-    if (data.session) window.location.href = 'portal.html';
+    if (data.session) irAlDestino(data.session.user.id);
   });
 
   const form = document.getElementById('login-form');
@@ -59,7 +65,8 @@
       submitBtn.disabled = false;
       submitBtn.textContent = 'Iniciar sesión';
     } else {
-      window.location.href = 'portal.html';
+      const { data: { session } } = await supa.auth.getSession();
+      irAlDestino(session.user.id);
     }
   });
 </script>

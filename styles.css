@@ -28,8 +28,16 @@ nav.top .wrap { display: flex; justify-content: space-between; align-items: cent
 .logout-btn {
   background: none; border: 1px solid var(--linea); color: var(--texto-suave);
   padding: 8px 16px; border-radius: 2px; font-size: 13px; cursor: pointer; font-family: 'Inter', sans-serif;
+  position: relative;
 }
 .logout-btn:hover { border-color: var(--acento); color: var(--acento); }
+
+/* Burbuja discreta con número: avisa cuántas alumnas nuevas hay sin revisar */
+.nav-dot {
+  position: absolute; top: -6px; right: -6px; min-width: 16px; height: 16px; padding: 0 3px;
+  border-radius: 999px; background: #c0392b; color: #fff; font-size: 10px; font-weight: 600;
+  display: flex; align-items: center; justify-content: center; line-height: 1;
+}
 
 /* --- Login --- */
 .login-screen { min-height: 100vh; display: flex; align-items: center; justify-content: center; padding: 24px; }
@@ -55,13 +63,37 @@ input:focus { outline: none; border-color: var(--acento); }
 .error-msg { color: #A13A3A; font-size: 13.5px; margin-top: 14px; text-align: center; }
 .help-note { text-align: center; font-size: 12.5px; color: var(--texto-suave); margin-top: 24px; }
 
-/* --- Portal --- */
-main.portal { padding: 48px 0 80px; }
-.greeting { font-size: 26px; margin-bottom: 6px; }
-.greeting-sub { color: var(--texto-suave); font-size: 15px; margin-bottom: 44px; }
+/* --- Registro (signup): bienvenida y organización por secciones --- */
+.signup-intro { text-align: center; font-size: 14px; color: var(--texto-suave); margin: -14px 0 4px; line-height: 1.5; }
+.form-section { margin-top: 22px; padding-top: 18px; border-top: 1px solid var(--linea); }
+.form-section:first-of-type { margin-top: 2px; padding-top: 0; border-top: none; }
+.form-section-title { font-size: 11.5px; text-transform: uppercase; letter-spacing: .08em; color: var(--acento); font-weight: 600; }
+.form-section label:first-of-type { margin-top: 6px; }
+.opcional { text-transform: none; letter-spacing: 0; font-weight: 400; color: var(--texto-suave); font-size: 12px; }
+.input-hint { font-size: 12px; color: var(--texto-suave); margin-top: 5px; line-height: 1.4; }
 
-section.block { margin-bottom: 48px; }
-section.block h3 { font-size: 18px; margin-bottom: 18px; }
+/* --- Portal --- */
+main.portal { padding: 28px 0 40px; }
+.greeting { font-size: 26px; margin-bottom: 4px; }
+.greeting-sub { color: var(--texto-suave); font-size: 15px; margin-bottom: 18px; }
+
+/* Pestañas del portal: separan "Mi progreso" de "Mi horario" */
+.portal-tabs { display: flex; gap: 8px; margin-bottom: 22px; border-bottom: 1px solid var(--linea); }
+.portal-tab {
+  position: relative; background: none; border: none; cursor: pointer;
+  font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600; color: var(--texto-suave);
+  padding: 10px 6px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent;
+}
+.portal-tab:hover { color: var(--texto); }
+.portal-tab.active { color: var(--acento); border-bottom-color: var(--acento); }
+.tab-dot {
+  display: inline-block; width: 8px; height: 8px; border-radius: 999px;
+  background: #c0392b; margin-left: 6px; vertical-align: middle;
+}
+
+section.block { margin-bottom: 28px; }
+section.block h3 { font-size: 18px; margin-bottom: 6px; }
+.panel-sub { color: var(--texto-suave); font-size: 14px; margin-bottom: 18px; }
 
 table.progreso { width: 100%; border-collapse: collapse; background: #fff; border: 1px solid var(--linea); }
 table.progreso th, table.progreso td { padding: 12px 14px; text-align: left; font-size: 14px; border-bottom: 1px solid var(--linea); }
@@ -72,6 +104,12 @@ table.progreso tr:last-child td { border-bottom: none; }
 
 .booking-box { background: #fff; border: 1px solid var(--linea); padding: 4px; min-height: 80px; }
 .booking-box #my-cal-inline { width: 100%; }
+
+/* En pantallas grandes, el calendario se ensancha (rompe el ancho de .wrap) para que
+   Cal.com muestre el mes compacto con las horas al lado, en vez de apilado y alto */
+@media (min-width: 900px) {
+  .booking-box { width: 900px; max-width: 900px; margin-left: calc(50% - 450px); }
+}
 
 .loading { text-align: center; color: var(--texto-suave); padding: 60px 0; font-size: 14.5px; }
 
@@ -87,6 +125,8 @@ table.progreso tr:last-child td { border-bottom: none; }
   animation: fadeUp .35s ease backwards;
 }
 .alumna-card:hover { transform: translateY(-2px); border-top-color: var(--acento); }
+/* Alumna recién registrada, sin ningún registro todavía: se distingue del resto de un vistazo */
+.alumna-card.nueva { background: var(--acento-suave); border-top-color: var(--acento); }
 .alumna-card .nombre { font-family: 'Playfair Display', serif; font-size: 17px; margin-bottom: 4px; }
 .alumna-card .email { font-size: 12.5px; color: var(--texto-suave); margin-bottom: 14px; }
 .badge { display: inline-flex; align-items: center; gap: 6px; font-size: 12px; padding: 4px 10px; border-radius: 20px; font-weight: 500; }
@@ -101,9 +141,207 @@ table.progreso tr:last-child td { border-bottom: none; }
 .card-meta { margin-top: 10px; font-size: 12.5px; color: var(--texto-suave); }
 .card-medidas { font-size: 11.5px; white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
 
+/* --- Panel de próximos cumpleaños --- */
+.cumple-panel {
+  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
+  padding: 16px 20px; margin-bottom: 24px;
+}
+.cumple-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.cumple-item {
+  display: flex; justify-content: space-between; font-size: 13.5px; color: var(--texto-suave);
+  padding: 6px 0; border-bottom: 1px solid var(--linea);
+}
+.cumple-item:last-child { border-bottom: none; }
+.cumple-item span:first-child { color: var(--texto); font-weight: 500; }
+
+/* --- Panel de próximas citas (Cal.com) --- */
+.citas-panel {
+  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
+  padding: 16px 20px; margin-bottom: 24px;
+}
+.citas-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
+.citas-vacio { font-size: 13.5px; color: var(--texto-suave); }
+
+/* --- Agenda (landing del panel) --- */
+.agenda-panel { display: flex; flex-direction: column; gap: 18px; }
+.agenda-dia { background: #fff; border: 1px solid var(--linea); padding: 16px 20px; animation: fadeUp .3s ease backwards; }
+.agenda-dia-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
+.agenda-item { display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
+.agenda-item:last-child { border-bottom: none; }
+.agenda-hora { font-weight: 600; color: var(--acento); min-width: 68px; }
+.agenda-alumna { color: var(--texto); }
+.agenda-alumna-link { color: var(--acento); cursor: pointer; text-decoration: underline; }
+.agenda-alumna-link:hover { opacity: .8; }
+
 .detail-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 24px; }
 .back-link { font-size: 13.5px; color: var(--texto-suave); cursor: pointer; }
 .back-link:hover { color: var(--acento); }
+.back-link-danger { color: #A13A3A; }
+.back-link-danger:hover { color: #C0392B; }
+
+/* Selector de horarios libres (elegir/cambiar horario fijo, reagendar):
+   tarjetas por día con los horarios como chips en grilla, en vez de una
+   lista larga de links uno debajo del otro. */
+.slots-wrap { display: flex; flex-direction: column; gap: 16px; }
+.slots-dia { background: #fff; border: 1px solid var(--linea); padding: 18px 20px; animation: fadeUp .3s ease backwards; }
+.slots-dia-titulo {
+  display: flex; align-items: center; gap: 8px; font-family: 'Playfair Display', serif;
+  font-size: 15.5px; font-weight: 600; margin-bottom: 14px; text-transform: capitalize;
+}
+.slots-dia-titulo .dia-icono { font-size: 15px; }
+.slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
+.slot-chip {
+  background: var(--crema); border: 1px solid var(--linea); border-radius: 999px;
+  padding: 10px 8px; text-align: center; font-size: 13.5px; font-weight: 600; color: var(--texto);
+  cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
+  font-family: 'Inter', sans-serif; white-space: nowrap;
+}
+.slot-chip:hover { background: var(--acento-suave); border-color: var(--acento); color: var(--acento); }
+.slot-chip:active { transform: scale(.97); }
+.slot-chip:disabled { opacity: .55; cursor: default; transform: none; }
+
+/* Calendario de mes para elegir/cambiar horario y reagendar: navegar por
+   mes, ver de un vistazo qué días tienen cupo, y elegir la hora abajo. */
+.cal-widget {
+  max-width: 560px; background: #fff; border: 1px solid var(--linea); padding: 12px 16px;
+  display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start;
+}
+.cal-mes-col { flex: 0 0 220px; width: 220px; }
+.cal-horas-col { flex: 1 1 190px; min-width: 170px; border-left: 1px solid var(--linea); padding-left: 22px; }
+@media (max-width: 480px) {
+  .cal-horas-col { border-left: none; padding-left: 0; margin-top: 8px; }
+}
+.cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
+.cal-mes-titulo { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 600; text-transform: capitalize; }
+.cal-nav {
+  background: none; border: 1px solid var(--linea); border-radius: 999px; width: 24px; height: 24px;
+  font-size: 14px; line-height: 1; color: var(--texto-suave); cursor: pointer; font-family: 'Inter', sans-serif;
+}
+.cal-nav:hover:not(:disabled) { border-color: var(--acento); color: var(--acento); }
+.cal-nav:disabled { opacity: .3; cursor: default; }
+.cal-dow {
+  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 10px;
+  color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px;
+}
+.cal-celdas { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 8px; }
+.cal-celda {
+  position: relative; aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px;
+  background: none; font-family: 'Inter', sans-serif; font-size: 11.5px; color: var(--texto);
+  cursor: pointer; display: flex; align-items: center; justify-content: center;
+}
+.cal-celda-vacia { visibility: hidden; cursor: default; }
+.cal-celda-sin-cupo { color: var(--texto-suave); opacity: .35; cursor: default; }
+.cal-celda-libre { background: var(--crema); border-color: var(--linea); font-weight: 600; }
+.cal-celda-libre:hover { border-color: var(--acento); color: var(--acento); }
+.cal-celda-activa, .cal-celda-activa:hover { background: var(--acento); border-color: var(--acento); color: #fff; }
+.cal-celda-hoy:not(.cal-celda-activa) { border-color: var(--acento); }
+.cal-punto { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 999px; background: var(--acento); }
+.cal-celda-activa .cal-punto { background: #fff; }
+.cal-horas-titulo { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--texto); margin-bottom: 12px; text-transform: capitalize; }
+
+/* Vista de semana del horario fijo: los 7 días de un vistazo, con el
+   día de clase resaltado — así el horario es lo más visible del panel,
+   y las acciones (reagendar, cancelar) quedan como algo secundario. */
+.semana-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 4px; }
+.semana-dia {
+  background: var(--crema); border: 1px solid var(--linea); border-radius: 8px;
+  padding: 10px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px;
+}
+.semana-dia-letra { font-size: 11px; font-weight: 600; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .02em; }
+.semana-dia-hora { font-size: 10.5px; font-weight: 600; color: #fff; white-space: nowrap; }
+.semana-dia-activo { background: var(--acento); border-color: var(--acento); }
+.semana-dia-activo .semana-dia-letra { color: #fff; }
+.semana-proxima {
+  display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--texto);
+  background: var(--acento-suave); border-radius: 8px; padding: 11px 14px; margin-top: 14px;
+}
+
+/* --- Tablero del landing (tab "Inicio"): indicadores a un lado,
+   calendario del mes al otro — lado a lado en pantallas anchas,
+   apilado en móvil. --- */
+.dashboard-row { display: flex; gap: 24px; align-items: flex-start; }
+.dashboard-indicadores { flex: 0 0 200px; }
+.dashboard-indicadores .resumen-cards { grid-template-columns: 1fr; margin: 0; }
+.dashboard-calendario { flex: 1 1 auto; min-width: 0; }
+.dashboard-calendario .cta-agendar { margin: 0; }
+@media (max-width: 640px) {
+  .dashboard-row { flex-wrap: wrap; }
+  .dashboard-indicadores { flex-basis: 100%; }
+  .dashboard-calendario { flex-basis: 100%; }
+}
+
+/* --- Tarjetas resumen del landing (próxima clase, progreso, sesiones) --- */
+.resumen-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 22px 0 30px; }
+.resumen-card {
+  background: #fff; border: 1px solid var(--linea); padding: 13px 14px; text-align: center;
+  cursor: pointer; transition: border-color .12s ease, transform .12s ease;
+}
+.resumen-card:hover { border-color: var(--acento); transform: translateY(-1px); }
+.resumen-card:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
+.resumen-card--destacada { background: var(--acento-suave); border-color: var(--acento); }
+.resumen-icon { font-size: 18px; margin-bottom: 3px; }
+.resumen-label { font-size: 10.5px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
+.resumen-valor { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; color: var(--texto); line-height: 1.3; }
+.resumen-detalle { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--texto-suave); line-height: 1.4; }
+
+/* Invitación a agendar la primera clase, cuando el landing no tiene
+   ninguna cita todavía que mostrar en el calendario del mes. */
+.cta-agendar {
+  background: var(--acento-suave); border: 1px solid var(--acento); text-align: center;
+  padding: 22px 24px; margin: 24px 0 30px;
+}
+.cta-agendar p { font-size: 14.5px; color: var(--texto); margin-bottom: 14px; }
+
+/* Una tarjeta por cada horario fijo activo, cuando la alumna tiene más
+   de uno (ej. lunes y viernes) — cada una con sus propias acciones. */
+.horarios-lista { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
+.horario-card { background: #fff; border: 1px solid var(--linea); padding: 16px 18px; }
+.horario-card-titulo { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px; color: var(--texto); }
+
+/* Botones secundarios (reagendar / cancelar una clase): no deben pesar
+   visualmente más que el horario en sí, así que van chicos y con
+   contorno en vez del botón grande y sólido de .btn-primary/.btn-danger. */
+.btn-sm {
+  display: inline-flex; align-items: center; gap: 6px; width: auto;
+  padding: 9px 16px; border-radius: 2px; border: 1px solid var(--linea); background: #fff;
+  color: var(--texto); font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13.5px; cursor: pointer;
+}
+.btn-sm:hover { border-color: var(--acento); color: var(--acento); }
+.btn-sm:disabled { opacity: .5; cursor: default; }
+.btn-sm-danger { color: #A13A3A; }
+.btn-sm-danger:hover { border-color: #C0392B; color: #C0392B; }
+
+/* --- Modal de confirmación: eliminar o archivar alumna --- */
+.modal-overlay {
+  display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.55);
+  align-items: center; justify-content: center; z-index: 200; padding: 24px;
+}
+.modal-overlay.open { display: flex; }
+.modal-card {
+  background: #fff; border-top: 3px solid #C0392B; max-width: 440px; width: 100%;
+  padding: 28px 26px; animation: fadeUp .2s ease backwards;
+}
+.modal-card h3 { font-size: 18px; margin-bottom: 16px; }
+.modal-warn {
+  background: #FBEAE8; border-left: 3px solid #C0392B; color: var(--texto);
+  padding: 12px 16px; font-size: 13.5px; margin-bottom: 12px; line-height: 1.55;
+}
+.modal-warn strong { color: #A13A3A; }
+.modal-alt {
+  background: var(--acento-suave); border-left: 3px solid var(--acento); color: var(--texto);
+  padding: 12px 16px; font-size: 13.5px; margin-bottom: 22px; line-height: 1.55;
+}
+.modal-actions { display: flex; flex-direction: column; gap: 10px; }
+.btn-danger, .btn-safe, .btn-cancel {
+  padding: 11px; border-radius: 2px; font-family: 'Inter', sans-serif; font-weight: 500;
+  font-size: 14px; cursor: pointer; border: none;
+}
+.btn-danger { background: #C0392B; color: #fff; }
+.btn-danger:hover { opacity: .9; }
+.btn-safe { background: var(--acento); color: #fff; }
+.btn-safe:hover { opacity: .9; }
+.btn-cancel { background: none; color: var(--texto-suave); border: 1px solid var(--linea); font-weight: 400; }
+.btn-cancel:hover { border-color: var(--texto-suave); }
 
 .entry-form { background: #fff; border: 1px solid var(--linea); padding: 24px; margin-bottom: 32px; }
 .entry-form .grid2 { display: grid; grid-template-columns: 1fr 1fr; gap: 0 16px; }
@@ -192,220 +430,3 @@ table.progreso .del-btn:hover { color: #A13A3A; }
 .lightbox-close {
   position: absolute; top: 20px; right: 28px; color: #fff; font-size: 32px; cursor: pointer; line-height: 1;
 }
-
-/* ============================================================
-   Agregado: sistema propio de agenda (horario fijo + sesión puntual)
-   con Google Calendar, en reemplazo del embed de Cal.com. Portado
-   desde el portal de Flor Fisioterapia — mismo patrón visual, mismas
-   variables de color (--acento, --linea, etc. ya definidas arriba con
-   la paleta de Kathia, así que todo esto hereda su marca sin tocar
-   nada).
-   ============================================================ */
-
-/* Pestañas del portal: separan "Inicio" / "Mi progreso" / "Agendar Sesión" */
-.portal-tabs { display: flex; gap: 8px; margin-bottom: 22px; border-bottom: 1px solid var(--linea); }
-.portal-tab {
-  position: relative; background: none; border: none; cursor: pointer;
-  font-family: 'Inter', sans-serif; font-size: 15px; font-weight: 600; color: var(--texto-suave);
-  padding: 10px 6px 14px; margin-bottom: -1px; border-bottom: 2px solid transparent;
-}
-.portal-tab:hover { color: var(--texto); }
-.portal-tab.active { color: var(--acento); border-bottom-color: var(--acento); }
-.tab-dot {
-  display: inline-block; width: 8px; height: 8px; border-radius: 999px;
-  background: #c0392b; margin-left: 6px; vertical-align: middle;
-}
-.panel-sub { color: var(--texto-suave); font-size: 14px; margin-bottom: 18px; }
-
-/* --- Panel de próximos cumpleaños (panel de Kathia) --- */
-.cumple-panel {
-  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
-  padding: 16px 20px; margin-bottom: 24px;
-}
-.cumple-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-.cumple-item {
-  display: flex; justify-content: space-between; font-size: 13.5px; color: var(--texto-suave);
-  padding: 6px 0; border-bottom: 1px solid var(--linea);
-}
-.cumple-item:last-child { border-bottom: none; }
-.cumple-item span:first-child { color: var(--texto); font-weight: 500; }
-
-/* --- Panel de próximas citas / agenda (panel de Kathia) --- */
-.citas-panel {
-  background: #fff; border: 1px solid var(--linea); border-left: 3px solid var(--acento);
-  padding: 16px 20px; margin-bottom: 24px;
-}
-.citas-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; }
-.citas-vacio { font-size: 13.5px; color: var(--texto-suave); }
-
-.agenda-panel { display: flex; flex-direction: column; gap: 18px; }
-.agenda-dia { background: #fff; border: 1px solid var(--linea); padding: 16px 20px; animation: fadeUp .3s ease backwards; }
-.agenda-dia-titulo { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; margin-bottom: 10px; text-transform: capitalize; }
-.agenda-item { display: flex; align-items: center; gap: 14px; padding: 8px 0; border-bottom: 1px solid var(--linea); font-size: 14px; }
-.agenda-item:last-child { border-bottom: none; }
-.agenda-hora { font-weight: 600; color: var(--acento); min-width: 68px; }
-.agenda-paciente { color: var(--texto); }
-.agenda-paciente-link { color: var(--acento); cursor: pointer; text-decoration: underline; }
-.agenda-paciente-link:hover { opacity: .8; }
-
-.back-link-danger { color: #A13A3A; }
-.back-link-danger:hover { color: #C0392B; }
-
-/* Selector de horarios libres (elegir/cambiar horario fijo, reagendar):
-   tarjetas por día con los horarios como chips en grilla. */
-.slots-wrap { display: flex; flex-direction: column; gap: 16px; }
-.slots-dia { background: #fff; border: 1px solid var(--linea); padding: 18px 20px; animation: fadeUp .3s ease backwards; }
-.slots-dia-titulo {
-  display: flex; align-items: center; gap: 8px; font-family: 'Playfair Display', serif;
-  font-size: 15.5px; font-weight: 600; margin-bottom: 14px; text-transform: capitalize;
-}
-.slots-dia-titulo .dia-icono { font-size: 15px; }
-.slots-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(112px, 1fr)); gap: 10px; }
-.slot-chip {
-  background: var(--crema); border: 1px solid var(--linea); border-radius: 999px;
-  padding: 10px 8px; text-align: center; font-size: 13.5px; font-weight: 600; color: var(--texto);
-  cursor: pointer; transition: background .15s ease, border-color .15s ease, color .15s ease, transform .1s ease;
-  font-family: 'Inter', sans-serif; white-space: nowrap;
-}
-.slot-chip:hover { background: var(--acento-suave); border-color: var(--acento); color: var(--acento); }
-.slot-chip:active { transform: scale(.97); }
-.slot-chip:disabled { opacity: .55; cursor: default; transform: none; }
-
-/* Calendario de mes para elegir/cambiar horario y reagendar: navegar por
-   mes, ver de un vistazo qué días tienen cupo, y elegir la hora abajo. */
-.cal-widget {
-  max-width: 560px; background: #fff; border: 1px solid var(--linea); padding: 12px 16px;
-  display: flex; gap: 22px; flex-wrap: wrap; align-items: flex-start;
-}
-.cal-mes-col { flex: 0 0 220px; width: 220px; }
-.cal-horas-col { flex: 1 1 190px; min-width: 170px; border-left: 1px solid var(--linea); padding-left: 22px; }
-@media (max-width: 480px) {
-  .cal-horas-col { border-left: none; padding-left: 0; margin-top: 8px; }
-}
-.cal-header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; }
-.cal-mes-titulo { font-family: 'Playfair Display', serif; font-size: 14px; font-weight: 600; text-transform: capitalize; }
-.cal-nav {
-  background: none; border: 1px solid var(--linea); border-radius: 999px; width: 24px; height: 24px;
-  font-size: 14px; line-height: 1; color: var(--texto-suave); cursor: pointer; font-family: 'Inter', sans-serif;
-}
-.cal-nav:hover:not(:disabled) { border-color: var(--acento); color: var(--acento); }
-.cal-nav:disabled { opacity: .3; cursor: default; }
-.cal-dow {
-  display: grid; grid-template-columns: repeat(7, 1fr); text-align: center; font-size: 10px;
-  color: var(--texto-suave); text-transform: uppercase; letter-spacing: .04em; margin-bottom: 4px;
-}
-.cal-celdas { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; margin-bottom: 8px; }
-.cal-celda {
-  position: relative; aspect-ratio: 1; border: 1px solid transparent; border-radius: 6px;
-  background: none; font-family: 'Inter', sans-serif; font-size: 11.5px; color: var(--texto);
-  cursor: pointer; display: flex; align-items: center; justify-content: center;
-}
-.cal-celda-vacia { visibility: hidden; cursor: default; }
-.cal-celda-sin-cupo { color: var(--texto-suave); opacity: .35; cursor: default; }
-.cal-celda-libre { background: var(--crema); border-color: var(--linea); font-weight: 600; }
-.cal-celda-libre:hover { border-color: var(--acento); color: var(--acento); }
-.cal-celda-activa, .cal-celda-activa:hover { background: var(--acento); border-color: var(--acento); color: #fff; }
-.cal-celda-hoy:not(.cal-celda-activa) { border-color: var(--acento); }
-.cal-punto { position: absolute; bottom: 4px; left: 50%; transform: translateX(-50%); width: 4px; height: 4px; border-radius: 999px; background: var(--acento); }
-.cal-celda-activa .cal-punto { background: #fff; }
-.cal-horas-titulo { display: flex; align-items: center; gap: 6px; font-size: 13.5px; font-weight: 600; color: var(--texto); margin-bottom: 12px; text-transform: capitalize; }
-
-/* Vista de semana del horario fijo (uso opcional en el panel de Kathia) */
-.semana-strip { display: grid; grid-template-columns: repeat(7, 1fr); gap: 6px; margin-top: 4px; }
-.semana-dia {
-  background: var(--crema); border: 1px solid var(--linea); border-radius: 8px;
-  padding: 10px 2px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 3px; min-height: 52px;
-}
-.semana-dia-letra { font-size: 11px; font-weight: 600; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .02em; }
-.semana-dia-hora { font-size: 10.5px; font-weight: 600; color: #fff; white-space: nowrap; }
-.semana-dia-activo { background: var(--acento); border-color: var(--acento); }
-.semana-dia-activo .semana-dia-letra { color: #fff; }
-.semana-proxima {
-  display: flex; align-items: center; gap: 8px; font-size: 13.5px; color: var(--texto);
-  background: var(--acento-suave); border-radius: 8px; padding: 11px 14px; margin-top: 14px;
-}
-
-/* --- Tablero del landing (tab "Inicio"): indicadores a un lado,
-   calendario del mes al otro. --- */
-.dashboard-row { display: flex; gap: 24px; align-items: flex-start; }
-.dashboard-indicadores { flex: 0 0 200px; }
-.dashboard-indicadores .resumen-cards { grid-template-columns: 1fr; margin: 0; }
-.dashboard-calendario { flex: 1 1 auto; min-width: 0; }
-.dashboard-calendario .cta-agendar { margin: 0; }
-@media (max-width: 640px) {
-  .dashboard-row { flex-wrap: wrap; }
-  .dashboard-indicadores { flex-basis: 100%; }
-  .dashboard-calendario { flex-basis: 100%; }
-}
-
-/* --- Tarjetas resumen del landing (próxima sesión, progreso, sesiones) --- */
-.resumen-cards { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 10px; margin: 22px 0 30px; }
-.resumen-card {
-  background: #fff; border: 1px solid var(--linea); padding: 13px 14px; text-align: center;
-  cursor: pointer; transition: border-color .12s ease, transform .12s ease;
-}
-.resumen-card:hover { border-color: var(--acento); transform: translateY(-1px); }
-.resumen-card:focus-visible { outline: 2px solid var(--acento); outline-offset: 2px; }
-.resumen-card--destacada { background: var(--acento-suave); border-color: var(--acento); }
-.resumen-icon { font-size: 18px; margin-bottom: 3px; }
-.resumen-label { font-size: 10.5px; color: var(--texto-suave); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 4px; }
-.resumen-valor { font-family: 'Playfair Display', serif; font-size: 15px; font-weight: 600; color: var(--texto); line-height: 1.3; }
-.resumen-detalle { margin-top: 6px; display: flex; flex-direction: column; gap: 2px; font-size: 11px; color: var(--texto-suave); line-height: 1.4; }
-
-/* Invitación a agendar la primera sesión, cuando el landing no tiene
-   ninguna cita todavía que mostrar en el calendario del mes. */
-.cta-agendar {
-  background: var(--acento-suave); border: 1px solid var(--acento); text-align: center;
-  padding: 22px 24px; margin: 24px 0 30px;
-}
-.cta-agendar p { font-size: 14.5px; color: var(--texto); margin-bottom: 14px; }
-
-/* Una tarjeta por cada horario fijo activo, cuando la alumna tiene más
-   de uno (ej. lunes y viernes) — cada una con sus propias acciones. */
-.horarios-lista { display: flex; flex-direction: column; gap: 12px; margin-top: 20px; }
-.horario-card { background: #fff; border: 1px solid var(--linea); padding: 16px 18px; }
-.horario-card-titulo { font-family: 'Inter', sans-serif; font-weight: 600; font-size: 14px; color: var(--texto); }
-
-/* Botones secundarios (reagendar / cancelar una sesión): chicos y con
-   contorno, en vez del botón grande y sólido de .btn-primary. */
-.btn-sm {
-  display: inline-flex; align-items: center; gap: 6px; width: auto;
-  padding: 9px 16px; border-radius: 2px; border: 1px solid var(--linea); background: #fff;
-  color: var(--texto); font-family: 'Inter', sans-serif; font-weight: 500; font-size: 13.5px; cursor: pointer;
-}
-.btn-sm:hover { border-color: var(--acento); color: var(--acento); }
-.btn-sm:disabled { opacity: .5; cursor: default; }
-.btn-sm-danger { color: #A13A3A; }
-.btn-sm-danger:hover { border-color: #C0392B; color: #C0392B; }
-
-/* --- Modal de confirmación (ej. eliminar/archivar alumna) --- */
-.modal-overlay {
-  display: none; position: fixed; inset: 0; background: rgba(20,16,12,0.55);
-  align-items: center; justify-content: center; z-index: 200; padding: 24px;
-}
-.modal-overlay.open { display: flex; }
-.modal-card {
-  background: #fff; border-top: 3px solid #C0392B; max-width: 440px; width: 100%;
-  padding: 28px 26px; animation: fadeUp .2s ease backwards;
-}
-.modal-card h3 { font-size: 18px; margin-bottom: 16px; }
-.modal-warn {
-  background: #FBEAE8; border-left: 3px solid #C0392B; color: var(--texto);
-  padding: 12px 16px; font-size: 13.5px; margin-bottom: 12px; line-height: 1.55;
-}
-.modal-warn strong { color: #A13A3A; }
-.modal-alt {
-  background: var(--acento-suave); border-left: 3px solid var(--acento); color: var(--texto);
-  padding: 12px 16px; font-size: 13.5px; margin-bottom: 22px; line-height: 1.55;
-}
-.modal-actions { display: flex; flex-direction: column; gap: 10px; }
-.btn-danger, .btn-safe, .btn-cancel {
-  padding: 11px; border-radius: 2px; font-family: 'Inter', sans-serif; font-weight: 500;
-  font-size: 14px; cursor: pointer; border: none;
-}
-.btn-danger { background: #C0392B; color: #fff; }
-.btn-danger:hover { opacity: .9; }
-.btn-safe { background: var(--acento); color: #fff; }
-.btn-safe:hover { opacity: .9; }
-.btn-cancel { background: none; color: var(--texto-suave); border: 1px solid var(--linea); font-weight: 400; }
-.btn-cancel:hover { border-color: var(--texto-suave); }

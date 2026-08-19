@@ -15,11 +15,14 @@
 
 <nav class="top">
   <div class="wrap-wide">
-    <span class="wordmark" onclick="renderGrid()" style="cursor:pointer;">Kathia Coach<span>Panel de Progreso</span></span>
+    <span class="wordmark" onclick="renderAgenda()" style="cursor:pointer;">Kathia Coach<span>Panel de Progreso</span></span>
     <div style="display:flex; gap:10px; align-items:center;">
-      <button class="logout-btn" onclick="renderGrid()">📊 Alumnas</button>
+      <button class="logout-btn" onclick="renderAgenda()">🏠 Hoy</button>
+      <button class="logout-btn" onclick="renderInvitar()">🎉 Nuevas alumnas</button>
+      <button class="logout-btn" onclick="renderGrid()">📊 Alumnas<span class="nav-dot" id="nuevas-dot" style="display:none;"></span></button>
       <button class="logout-btn" onclick="renderAgendaCalendario()">📅 Agenda</button>
       <button class="logout-btn" id="logout-btn">Cerrar sesión</button>
+      <button class="logout-btn" onclick="renderArchivadas()" title="Alumnas archivadas" style="margin-left:6px;">🗄️</button>
     </div>
   </div>
 </nav>
@@ -30,6 +33,23 @@
   </div>
 </main>
 
+<div class="modal-overlay" id="modal-eliminar">
+  <div class="modal-card">
+    <h3 id="modal-eliminar-titulo">¿Eliminar a esta alumna?</h3>
+    <div class="modal-warn">
+      <strong>Esta acción no se puede deshacer.</strong> Se borra para siempre todo su historial — pesos, notas y fotos — su ficha completa desaparece de tu panel, y su correo queda libre por si alguien quiere volver a registrarse con él.
+    </div>
+    <div class="modal-alt">
+      ¿Solo quieres que deje de aparecer en tus Alumnas? Archívala en su lugar: no se pierde nada, y puedes reactivarla cuando quieras.
+    </div>
+    <div class="modal-actions">
+      <button type="button" class="btn-safe" id="modal-btn-archivar">🗂️ Archivar en su lugar</button>
+      <button type="button" class="btn-danger" id="modal-btn-eliminar">🗑️ Eliminar definitivamente</button>
+      <button type="button" class="btn-cancel" id="modal-btn-cancelar">Cancelar</button>
+    </div>
+  </div>
+</div>
+
 <script>
   const supa = supabase.createClient(SUPABASE_URL, SUPABASE_ANON_KEY);
   const contentEl = document.getElementById('content');
@@ -37,8 +57,42 @@
   let currentProgreso = [];
   let editingId = null;
   let animoSeleccionado = null;
-  let vistaActual = 'grid'; // 'grid' | 'detalle' | 'agenda-calendario'
+  let vistaActual = 'agenda'; // 'agenda' | 'agenda-calendario' | 'grid' | 'detalle'
+  let vistaAnterior = 'agenda'; // a dónde vuelve el "← Volver" desde el detalle de una alumna
+  let citasCache = { loading: true, configurado: null, error: false, mensaje: '', citas: [] };
   const ICONOS_ANIMO = ['💪', '🔥', '👏', '🌟', '❤️', '🎉'];
+
+  async function cargarCitas() {
+    try {
+      const resp = await fetch('/.netlify/functions/proximas-citas');
+      const data = await resp.json();
+      citasCache = { loading: false, configurado: !!data.configurado, error: !!data.error, mensaje: data.mensaje || '', citas: data.citas || [] };
+    } catch (err) {
+      citasCache = { loading: false, configurado: true, error: true, mensaje: 'No se pudo conectar con el calendario.', citas: [] };
+    }
+    if (vistaActual === 'agenda') renderAgenda();
+  }
+
+  function fmtDiaLargo(d) {
+    const hoy = new Date(); hoy.setHours(0, 0, 0, 0);
+    const dia = new Date(d); dia.setHours(0, 0, 0, 0);
+    const dias = Math.round((dia - hoy) / (1000 * 60 * 60 * 24));
+    if (dias === 0) return 'Hoy';
+    if (dias === 1) return 'Mañana';
+    return d.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+  }
+
+  function agruparCitasPorDia(citas) {
+    const grupos = {};
+    const orden = [];
+    citas.forEach(c => {
+      const d = new Date(c.inicio);
+      const key = d.toDateString();
+      if (!grupos[key]) { grupos[key] = { dia: d, items: [] }; orden.push(key); }
+      grupos[key].items.push(c);
+    });
+    return orden.map(key => grupos[key]);
+  }
 
   function fmtFecha(iso) {
     const d = new Date(iso + 'T00:00:00');
@@ -49,14 +103,78 @@
     return Math.floor((Date.now() - d.getTime()) / (1000 * 60 * 60 * 24));
   }
 
-  const NOMBRES_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
-  function nombreDia(n) { return NOMBRES_DIA[n] || '—'; }
-  function fmtHora12(horaStr) {
-    if (!horaStr) return '—';
-    const [hh, mm] = horaStr.split(':').map(Number);
-    const ampm = hh < 12 ? 'a.m.' : 'p.m.';
-    const h12 = hh % 12 === 0 ? 12 : hh % 12;
-    return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
+  // Carga (o recarga) la lista de alumnas y su resumen de progreso.
+  // Separado de init() para poder llamarlo de nuevo cuando la pestaña
+  // vuelve a tener foco, sin repetir la verificación de sesión/admin.
+  // Actualiza el puntito con número en "Alumnas" a partir de lo que ya
+  // hay en alumnasCache — para no tener que recargar todo solo por eso.
+  function actualizarDotNuevas() {
+    const numNuevas = alumnasCache.filter(a => !a.revisada_por_kathia).length;
+    const dot = document.getElementById('nuevas-dot');
+    if (dot) {
+      dot.textContent = numNuevas;
+      dot.style.display = numNuevas > 0 ? 'flex' : 'none';
+    }
+  }
+
+  async function cargarAlumnas() {
+    const { data: alumnas, error } = await supa
+      .from('alumnas')
+      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm, revisada_por_kathia')
+      .eq('es_admin', false)
+      .eq('activa', true)
+      .order('nombre', { ascending: true });
+
+    if (error) {
+      contentEl.innerHTML = `<div class="empty-state">No se pudo cargar la lista de alumnas.</div>`;
+      return;
+    }
+
+    const { data: progresoTodo } = await supa
+      .from('progreso')
+      .select('alumna_id, fecha, peso_kg')
+      .order('fecha', { ascending: false });
+
+    // Resumen por alumna: cantidad de registros, último registro y últimos 2 pesos (para el semáforo)
+    const resumen = {};
+    (progresoTodo || []).forEach(p => {
+      if (!resumen[p.alumna_id]) {
+        resumen[p.alumna_id] = { total: 0, ultima: null, ultimoPeso: null, pesos: [] };
+      }
+      const r = resumen[p.alumna_id];
+      r.total++;
+      if (!r.ultima) r.ultima = p.fecha;
+      if (r.ultimoPeso == null && p.peso_kg != null) r.ultimoPeso = p.peso_kg;
+      if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
+    });
+
+    // Horario(s) fijo(s) activos de cada alumna (puede tener más de uno,
+    // ej. lunes y viernes), para mostrarlos directo en su tarjeta sin
+    // tener que entrar a su ficha.
+    const { data: horariosTodo } = await supa
+      .from('horario_fijo')
+      .select('alumna_id, dia_semana, hora')
+      .eq('activo', true)
+      .order('dia_semana', { ascending: true })
+      .order('hora', { ascending: true });
+    const horariosPorAlumna = {};
+    (horariosTodo || []).forEach(h => {
+      if (!horariosPorAlumna[h.alumna_id]) horariosPorAlumna[h.alumna_id] = [];
+      horariosPorAlumna[h.alumna_id].push(h);
+    });
+
+    alumnasCache = alumnas.map(a => ({
+      ...a,
+      total: resumen[a.id] ? resumen[a.id].total : 0,
+      ultima: resumen[a.id] ? resumen[a.id].ultima : null,
+      ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
+      pesos: resumen[a.id] ? resumen[a.id].pesos : [],
+      horariosFijos: horariosPorAlumna[a.id] || [],
+    }));
+
+    // Puntito con número en "Alumnas" para las que Kathia todavía no revisó
+    // (entran así apenas se registran, sin importar si pusieron su peso).
+    actualizarDotNuevas();
   }
 
   async function init() {
@@ -70,49 +188,24 @@
     }
 
     await cargarAlumnas();
-    renderGrid();
-  }
+    renderAgenda();
+    cargarCitas();
 
-  async function cargarAlumnas() {
-    const { data: alumnas, error } = await supa
-      .from('alumnas')
-      .select('id, nombre, email, activa, peso_objetivo, fecha_nacimiento, estatura_cm, direccion, recibir_invites_calendario')
-      .order('nombre', { ascending: true });
-
-    if (error) {
-      contentEl.innerHTML = `<div class="empty-state">No se pudo cargar la lista de alumnas.</div>`;
-      return;
+    // Si Kathia deja el panel abierto y vuelve más tarde (por ejemplo tras
+    // salir a WhatsApp), esto refresca solo la lista/indicadores sin que
+    // ella tenga que recargar la página a mano.
+    let refrescando = false;
+    async function alVolverFoco() {
+      if (refrescando || document.hidden) return;
+      refrescando = true;
+      await cargarAlumnas();
+      if (vistaActual === 'grid') renderGrid();
+      else if (vistaActual === 'agenda') renderAgenda();
+      else if (vistaActual === 'agenda-calendario') renderAgendaCalendario();
+      refrescando = false;
     }
-
-    const { data: progresoTodo } = await supa
-      .from('progreso')
-      .select('alumna_id, fecha, peso_kg, cintura_cm, cadera_cm')
-      .order('fecha', { ascending: false });
-
-    // Resumen por alumna: cantidad de registros, último registro, últimas medidas y últimos 2 pesos (para el semáforo)
-    const resumen = {};
-    (progresoTodo || []).forEach(p => {
-      if (!resumen[p.alumna_id]) {
-        resumen[p.alumna_id] = { total: 0, ultima: null, ultimoPeso: null, ultimaCintura: null, ultimaCadera: null, pesos: [] };
-      }
-      const r = resumen[p.alumna_id];
-      r.total++;
-      if (!r.ultima) r.ultima = p.fecha;
-      if (r.ultimoPeso == null && p.peso_kg != null) r.ultimoPeso = p.peso_kg;
-      if (r.ultimaCintura == null && p.cintura_cm != null) r.ultimaCintura = p.cintura_cm;
-      if (r.ultimaCadera == null && p.cadera_cm != null) r.ultimaCadera = p.cadera_cm;
-      if (p.peso_kg != null && r.pesos.length < 2) r.pesos.push(p.peso_kg);
-    });
-
-    alumnasCache = alumnas.map(a => ({
-      ...a,
-      total: resumen[a.id] ? resumen[a.id].total : 0,
-      ultima: resumen[a.id] ? resumen[a.id].ultima : null,
-      ultimoPeso: resumen[a.id] ? resumen[a.id].ultimoPeso : null,
-      ultimaCintura: resumen[a.id] ? resumen[a.id].ultimaCintura : null,
-      ultimaCadera: resumen[a.id] ? resumen[a.id].ultimaCadera : null,
-      pesos: resumen[a.id] ? resumen[a.id].pesos : [],
-    }));
+    window.addEventListener('focus', alVolverFoco);
+    document.addEventListener('visibilitychange', () => { if (!document.hidden) alVolverFoco(); });
   }
 
   function badgeFor(a) {
@@ -152,494 +245,25 @@
     return Math.round((prox - hoy) / (1000 * 60 * 60 * 24));
   }
 
-  // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de referencia OMS —
-  // informativo, no reemplaza una evaluación clínica.
-  function imcFor(pesoKg, estaturaCm) {
-    if (pesoKg == null || !estaturaCm) return null;
-    const m = estaturaCm / 100;
-    const imc = pesoKg / (m * m);
-    let categoria;
-    if (imc < 18.5) categoria = 'Bajo peso';
-    else if (imc < 25) categoria = 'Normal';
-    else if (imc < 30) categoria = 'Sobrepeso';
-    else categoria = 'Obesidad';
-    return { valor: imc.toFixed(1), categoria };
+  function fmtDiaMes(fechaNac) {
+    const nac = new Date(fechaNac + 'T00:00:00');
+    return nac.toLocaleDateString('es-PE', { day: '2-digit', month: 'short' });
   }
 
-  // ICC (índice cintura-cadera): se calcula solo con datos que ya se registran (sin pedirle nada nuevo a Kathia).
-  function iccFor(cinturaCm, caderaCm) {
-    if (cinturaCm == null || caderaCm == null) return null;
-    return (cinturaCm / caderaCm).toFixed(2);
+  const NOMBRES_DIA = ['Domingo', 'Lunes', 'Martes', 'Miércoles', 'Jueves', 'Viernes', 'Sábado'];
+  function nombreDia(n) { return NOMBRES_DIA[n] || '—'; }
+  function fmtHora12(horaStr) {
+    if (!horaStr) return '—';
+    const [hh, mm] = horaStr.split(':').map(Number);
+    const ampm = hh < 12 ? 'a.m.' : 'p.m.';
+    const h12 = hh % 12 === 0 ? 12 : hh % 12;
+    return `${h12}:${String(mm).padStart(2, '0')} ${ampm}`;
   }
 
-  function renderGrid() {
-    vistaActual = 'grid';
-    const cards = alumnasCache.map((a, i) => {
-      const b = badgeFor(a);
-      const s = semaforoFor(a);
-
-      const medidas = [];
-      if (a.ultimoPeso != null) medidas.push(`⚖️ ${a.ultimoPeso}kg`);
-      if (a.ultimaCintura != null) medidas.push(`Cint. ${a.ultimaCintura}cm`);
-      if (a.ultimaCadera != null) medidas.push(`Cad. ${a.ultimaCadera}cm`);
-
-      const imc = imcFor(a.ultimoPeso, a.estatura_cm);
-      const icc = iccFor(a.ultimaCintura, a.ultimaCadera);
-      const indices = [];
-      if (imc) indices.push(`IMC ${imc.valor} (${imc.categoria})`);
-      if (icc) indices.push(`ICC ${icc}`);
-
-      let edadHTML = '';
-      if (a.fecha_nacimiento) {
-        const edad = calcularEdad(a.fecha_nacimiento);
-        const dias = diasParaCumple(a.fecha_nacimiento);
-        const cumpleTexto = dias === 0 ? '🎂 ¡Hoy!' : dias <= 14 ? `🎂 en ${dias} días` : '';
-        edadHTML = `<div class="card-meta">${edad} años ${cumpleTexto}</div>`;
-      }
-
-      return `
-        <div class="alumna-card" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
-          <div class="nombre">${a.nombre || a.email}</div>
-          <div class="email">${a.email || ''}</div>
-          <div class="badge-row">
-            <span class="badge ${b.cls}">${b.icon} ${b.texto}</span>
-            <span class="badge ${s.cls}">${s.icon} ${s.texto}</span>
-          </div>
-          ${medidas.length ? `<div class="card-meta card-medidas">${medidas.join(' · ')}</div>` : ''}
-          ${indices.length ? `<div class="card-meta card-medidas">${indices.join(' · ')}</div>` : ''}
-          ${edadHTML}
-          <div class="card-meta">${a.total} registro${a.total === 1 ? '' : 's'} ${a.ultima ? '· último: ' + fmtFecha(a.ultima) : ''}</div>
-        </div>
-      `;
-    }).join('');
-
-    contentEl.innerHTML = `
-      <h1 class="greeting">Progreso de alumnas</h1>
-      <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
-      <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
-    `;
-  }
-
-  async function fotoUrl(path) {
-    if (!path) return null;
-    const { data, error } = await supa.storage.from('progreso-fotos').createSignedUrl(path, 3600);
-    return (!error && data) ? data.signedUrl : null;
-  }
-
-  window.abrirAlumna = async function(id) {
-    vistaActual = 'detalle';
-    const a = alumnasCache.find(x => x.id === id);
-    contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
-
-    const { data: progreso } = await supa
-      .from('progreso')
-      .select('id, fecha, peso_kg, cintura_cm, cadera_cm, medidas, notas, foto_path, animo')
-      .eq('alumna_id', id)
-      .order('fecha', { ascending: false });
-
-    currentProgreso = progreso || [];
-    editingId = null;
-    animoSeleccionado = null;
-
-    const filas = (progreso || []).map(p => `
-      <tr>
-        <td>${fmtFecha(p.fecha)}</td>
-        <td>${p.peso_kg != null ? p.peso_kg + ' kg' : '—'}</td>
-        <td>${p.cintura_cm != null ? p.cintura_cm + ' cm' : '—'}</td>
-        <td>${p.cadera_cm != null ? p.cadera_cm + ' cm' : '—'}</td>
-        <td>${p.notas || p.medidas || '—'}</td>
-        <td style="font-size:17px;">${p.animo || '—'}</td>
-        <td>${p.foto_path ? `<span class="foto-thumb" data-path="${p.foto_path}">Ver foto</span>` : '—'}</td>
-        <td class="row-actions">
-          <button class="edit-btn" onclick="editarRegistro(${p.id})">Editar</button>
-          <button class="del-btn" onclick="borrarRegistro(${p.id}, '${id}')">Borrar</button>
-        </td>
-      </tr>
-    `).join('');
-
-    contentEl.innerHTML = `
-      <div class="detail-header">
-        <div>
-          <h1 class="greeting">${a.nombre || a.email}</h1>
-          <p class="greeting-sub" style="margin-bottom:0;">${a.email}</p>
-        </div>
-        <span class="back-link" onclick="renderGrid()">← Volver a todas</span>
-      </div>
-
-      ${(() => {
-        const ultimoPeso = (progreso || []).find(p => p.peso_kg != null);
-        const metaAlcanzada = a.peso_objetivo != null && ultimoPeso && Math.abs(ultimoPeso.peso_kg - a.peso_objetivo) < 0.5;
-        return `
-      <div class="entry-form" style="margin-bottom:20px;">
-        <h3 style="margin-bottom:4px;">Datos de la alumna</h3>
-        ${metaAlcanzada ? `<div class="meta-box" style="margin:8px 0 16px;">🎉 Alcanzó su meta de <strong>${a.peso_objetivo} kg</strong>. Fija una nueva meta abajo cuando quieras.</div>` : ''}
-        <form id="meta-form" class="grid2" style="align-items:end;">
-          <div>
-            <label>Peso objetivo (kg)</label>
-            <input type="number" step="0.1" id="f-meta" placeholder="${metaAlcanzada ? 'Nueva meta' : 'Ej. 65'}" value="${metaAlcanzada ? '' : (a.peso_objetivo != null ? a.peso_objetivo : '')}">
-          </div>
-          <div>
-            <label>Fecha de nacimiento</label>
-            <input type="date" id="f-nacimiento" value="${a.fecha_nacimiento || ''}">
-          </div>
-          <div>
-            <label>Estatura (cm)</label>
-            <input type="number" step="0.1" id="f-estatura" placeholder="Ej. 162" value="${a.estatura_cm != null ? a.estatura_cm : ''}">
-          </div>
-          <div>
-            <label>Dirección</label>
-            <input type="text" id="f-direccion" placeholder="Opcional" value="${a.direccion || ''}">
-          </div>
-          <div style="grid-column:1/-1;">
-            <label style="display:flex; align-items:center; gap:8px; cursor:pointer;">
-              <input type="checkbox" id="f-recibir-invites" style="width:auto;"${a.recibir_invites_calendario ? ' checked' : ''}>
-              Quiere recibir también el correo automático de Google Calendar por cada sesión
-            </label>
-          </div>
-          <button type="submit" class="btn-primary" style="margin-top:12px; grid-column:1/-1;">Guardar datos</button>
-        </form>
-      </div>`;
-      })()}
-
-      <div class="entry-form">
-        <h3 id="entry-form-title" style="margin-bottom:4px;">Agregar registro</h3>
-        <form id="entry-form">
-          <div class="grid2">
-            <div>
-              <label>Fecha</label>
-              <input type="date" id="f-fecha" value="${new Date().toISOString().slice(0,10)}" required>
-            </div>
-            <div>
-              <label>Peso (kg)</label>
-              <input type="number" step="0.1" id="f-peso" placeholder="Opcional">
-            </div>
-          </div>
-          <div class="grid2">
-            <div>
-              <label>Cintura (cm)</label>
-              <input type="number" step="0.1" id="f-cintura" placeholder="Opcional">
-            </div>
-            <div>
-              <label>Cadera (cm)</label>
-              <input type="number" step="0.1" id="f-cadera" placeholder="Opcional">
-            </div>
-          </div>
-          <label>Notas</label>
-          <textarea id="f-notas" placeholder="Cómo estuvo la sesión, ajustes, observaciones..."></textarea>
-          <label>Ícono de ánimo (opcional)</label>
-          <div class="animo-picker" id="animo-picker">
-            ${ICONOS_ANIMO.map(icono => `<button type="button" class="animo-btn" data-icono="${icono}">${icono}</button>`).join('')}
-          </div>
-          <label id="f-foto-label">Foto de progreso (opcional)</label>
-          <input type="file" id="f-foto" accept="image/*">
-          <div style="display:flex; gap:10px; align-items:center;">
-            <button type="submit" class="btn-primary" id="entry-submit-btn">Guardar registro</button>
-            <span class="back-link" id="cancel-edit" style="display:none;">Cancelar edición</span>
-          </div>
-        </form>
-      </div>
-
-      <section class="block">
-        <h3>Historial</h3>
-        ${progreso && progreso.length ? `
-          <table class="progreso">
-            <thead><tr><th>Fecha</th><th>Peso</th><th>Cintura</th><th>Cadera</th><th>Notas</th><th>Ánimo</th><th>Foto</th><th></th></tr></thead>
-            <tbody>${filas}</tbody>
-          </table>
-        ` : `<div class="empty-state">Todavía no hay registros para ella.</div>`}
-      </section>
-    `;
-
-    document.getElementById('meta-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const val = document.getElementById('f-meta').value;
-      const nacimiento = document.getElementById('f-nacimiento').value;
-      const estatura = document.getElementById('f-estatura').value;
-      const direccion = document.getElementById('f-direccion').value.trim();
-      const recibirInvites = document.getElementById('f-recibir-invites').checked;
-      const { error } = await supa.from('alumnas').update({
-        peso_objetivo: val ? parseFloat(val) : null,
-        fecha_nacimiento: nacimiento || null,
-        estatura_cm: estatura ? parseFloat(estatura) : null,
-        direccion: direccion || null,
-        recibir_invites_calendario: recibirInvites,
-      }).eq('id', id);
-      if (error) { alert('No se pudo guardar: ' + error.message); return; }
-      a.peso_objetivo = val ? parseFloat(val) : null;
-      a.fecha_nacimiento = nacimiento || null;
-      a.estatura_cm = estatura ? parseFloat(estatura) : null;
-      a.direccion = direccion || null;
-      a.recibir_invites_calendario = recibirInvites;
-      alert('Datos guardados.');
-    });
-
-    document.querySelectorAll('.animo-btn').forEach(btn => {
-      btn.addEventListener('click', () => {
-        const yaActivo = btn.classList.contains('active');
-        document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
-        if (yaActivo) {
-          animoSeleccionado = null;
-        } else {
-          btn.classList.add('active');
-          animoSeleccionado = btn.dataset.icono;
-        }
-      });
-    });
-
-    document.querySelectorAll('.foto-thumb').forEach(el => {
-      el.addEventListener('click', async () => {
-        el.textContent = 'Cargando...';
-        const url = await fotoUrl(el.dataset.path);
-        if (url) window.open(url, '_blank');
-        el.textContent = 'Ver foto';
-      });
-    });
-
-    window.editarRegistro = function(regId) {
-      const p = currentProgreso.find(x => x.id === regId);
-      if (!p) return;
-      editingId = regId;
-
-      document.getElementById('f-fecha').value = p.fecha;
-      document.getElementById('f-peso').value = p.peso_kg != null ? p.peso_kg : '';
-      document.getElementById('f-cintura').value = p.cintura_cm != null ? p.cintura_cm : '';
-      document.getElementById('f-cadera').value = p.cadera_cm != null ? p.cadera_cm : '';
-      document.getElementById('f-notas').value = p.notas || p.medidas || '';
-      document.getElementById('f-foto').value = '';
-
-      animoSeleccionado = p.animo || null;
-      document.querySelectorAll('.animo-btn').forEach(b => {
-        b.classList.toggle('active', b.dataset.icono === animoSeleccionado);
-      });
-
-      document.getElementById('entry-form-title').textContent = 'Editar registro del ' + fmtFecha(p.fecha);
-      document.getElementById('f-foto-label').textContent = p.foto_path
-        ? 'Reemplazar foto (opcional — deja vacío para conservar la actual)'
-        : 'Foto de progreso (opcional)';
-      document.getElementById('entry-submit-btn').textContent = 'Actualizar registro';
-      document.getElementById('cancel-edit').style.display = 'inline';
-
-      document.getElementById('entry-form').closest('.entry-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
-    };
-
-    function salirModoEdicion() {
-      editingId = null;
-      animoSeleccionado = null;
-      document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
-      document.getElementById('entry-form').reset();
-      document.getElementById('f-fecha').value = new Date().toISOString().slice(0,10);
-      document.getElementById('entry-form-title').textContent = 'Agregar registro';
-      document.getElementById('f-foto-label').textContent = 'Foto de progreso (opcional)';
-      document.getElementById('entry-submit-btn').textContent = 'Guardar registro';
-      document.getElementById('cancel-edit').style.display = 'none';
-    }
-
-    document.getElementById('cancel-edit').addEventListener('click', salirModoEdicion);
-
-    document.getElementById('entry-form').addEventListener('submit', async (e) => {
-      e.preventDefault();
-      const submitBtn = document.getElementById('entry-submit-btn');
-      const editando = editingId !== null;
-      submitBtn.disabled = true;
-      submitBtn.textContent = editando ? 'Actualizando...' : 'Guardando...';
-
-      const fecha = document.getElementById('f-fecha').value;
-      const peso = document.getElementById('f-peso').value;
-      const cintura = document.getElementById('f-cintura').value;
-      const cadera = document.getElementById('f-cadera').value;
-      const notas = document.getElementById('f-notas').value.trim();
-      const fotoFile = document.getElementById('f-foto').files[0];
-
-      let foto_path = editando ? (currentProgreso.find(x => x.id === editingId) || {}).foto_path || null : null;
-      if (fotoFile) {
-        const ext = fotoFile.name.split('.').pop();
-        const path = `${id}/${fecha}-${Date.now()}.${ext}`;
-        const { error: upErr } = await supa.storage.from('progreso-fotos').upload(path, fotoFile);
-        if (upErr) {
-          alert('No se pudo subir la foto: ' + upErr.message);
-          submitBtn.disabled = false;
-          submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
-          return;
-        }
-        foto_path = path;
-      }
-
-      const payload = {
-        fecha,
-        peso_kg: peso ? parseFloat(peso) : null,
-        cintura_cm: cintura ? parseFloat(cintura) : null,
-        cadera_cm: cadera ? parseFloat(cadera) : null,
-        notas: notas || null,
-        foto_path,
-        animo: animoSeleccionado,
-      };
-
-      const { error } = editando
-        ? await supa.from('progreso').update(payload).eq('id', editingId)
-        : await supa.from('progreso').insert({ alumna_id: id, ...payload });
-
-      if (error) {
-        alert('No se pudo guardar: ' + error.message);
-        submitBtn.disabled = false;
-        submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
-      } else {
-        abrirAlumna(id);
-      }
-    });
-  };
-
-  window.borrarRegistro = async function(regId, alumnaId) {
-    if (!confirm('¿Borrar este registro?')) return;
-    const { error } = await supa.from('progreso').delete().eq('id', regId);
-    if (error) { alert('No se pudo borrar: ' + error.message); return; }
-    abrirAlumna(alumnaId);
-  };
-
-  // ============================================================
-  // Agenda: calendario de mes con todas las sesiones de todas las
-  // alumnas (horario_fijo + citas_fijas vía Google Calendar) — para que
-  // Kathia vea y gestione su agenda sin salir del panel.
-  // ============================================================
-
-  function construirCalendarioAgenda(area, citasPorDia) {
-    const dias = Object.keys(citasPorDia).sort();
-    const hoyLima = new Date(Date.now() - 5 * 3600000);
-    const hoyStr = hoyLima.toISOString().slice(0, 10);
-    let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
-    let diaSeleccionado = dias.length ? dias[0] : hoyStr;
-    const pad = (n) => String(n).padStart(2, '0');
-
-    function render() {
-      const primerDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1);
-      const ultimoDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 0);
-      const offset = primerDiaMes.getDay();
-      const filas = Math.ceil((offset + ultimoDiaMes.getDate()) / 7);
-      const nombreMes = mesActual.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
-
-      let celdas = '';
-      for (let i = 0; i < filas * 7; i++) {
-        const numDia = i - offset + 1;
-        if (numDia < 1 || numDia > ultimoDiaMes.getDate()) {
-          celdas += `<div class="cal-celda cal-celda-vacia"></div>`;
-          continue;
-        }
-        const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
-        const tieneCitas = !!(citasPorDia[fechaStr] && citasPorDia[fechaStr].length);
-        const sesiones = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
-        if (fechaStr === diaSeleccionado) sesiones.push('cal-celda-activa');
-        if (fechaStr === hoyStr) sesiones.push('cal-celda-hoy');
-        celdas += `<button type="button" class="${sesiones.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
-      }
-
-      area.innerHTML = `
-        <div class="cal-widget">
-          <div class="cal-mes-col">
-            <div class="cal-header">
-              <button type="button" class="cal-nav" id="ag-prev" title="Mes anterior">‹</button>
-              <div class="cal-mes-titulo">${nombreMes}</div>
-              <button type="button" class="cal-nav" id="ag-next" title="Mes siguiente">›</button>
-            </div>
-            <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
-            <div class="cal-celdas">${celdas}</div>
-          </div>
-          <div class="cal-horas-col" id="ag-detalle-wrap"></div>
-        </div>
-      `;
-
-      area.querySelector('#ag-prev').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() - 1, 1); render(); });
-      area.querySelector('#ag-next').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 1); render(); });
-      area.querySelectorAll('button[data-fecha]:not(:disabled)').forEach(b => {
-        b.addEventListener('click', () => { diaSeleccionado = b.dataset.fecha; render(); });
-      });
-
-      renderDetalle();
-    }
-
-    function renderDetalle() {
-      const wrap = area.querySelector('#ag-detalle-wrap');
-      if (!wrap) return;
-      const citas = citasPorDia[diaSeleccionado] || [];
-      const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
-      const tituloDia = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
-      if (!citas.length) {
-        wrap.innerHTML = `<div class="cal-horas-titulo">🕐 ${tituloDia}</div><div class="empty-state">No hay sesiones ese día.</div>`;
-        return;
-      }
-      wrap.innerHTML = `
-        <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
-        <div class="horarios-lista">
-          ${citas.map(c => `
-            <div class="horario-card">
-              <strong style="color:var(--texto);">${c.nombreAlumna}</strong>
-              <div class="card-meta" style="margin-top:2px;">${fmtHora12(c.hora)} · ${c.horario_fijo_id != null ? 'Horario fijo' : 'Sesión puntual'}</div>
-              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
-                ${c.horario_fijo_id != null ? `
-                  <button class="btn-sm" type="button" id="hf-admin-reagendar-${c.id}">Reagendar</button>
-                  <button class="btn-sm btn-sm-danger" type="button" id="hf-admin-cancelar-${c.id}">Cancelar esta sesión</button>
-                  <span class="back-link back-link-danger" id="ag-cancelar-serie-${c.id}">Cancelar horario fijo</span>
-                ` : `
-                  <button class="btn-sm btn-sm-danger" type="button" id="ag-cancelar-puntual-${c.id}">Cancelar esta sesión</button>
-                `}
-              </div>
-              <div id="hf-admin-reagendar-area-${c.id}" style="margin-top:10px;"></div>
-            </div>
-          `).join('')}
-        </div>
-      `;
-
-      citas.forEach(c => {
-        if (c.horario_fijo_id != null) {
-          wireHorarioFijoBotonesAdmin({ id: c.id }, c.alumna_id, c.horario_fijo_id, c.id, () => renderAgendaCalendario());
-          const btnSerie = document.getElementById(`ag-cancelar-serie-${c.id}`);
-          if (btnSerie) {
-            btnSerie.addEventListener('click', async () => {
-              if (!confirm(`¿Cancelar el horario fijo completo de ${c.nombreAlumna}? Se cancelan sus próximas sesiones automáticas para ese horario.`)) return;
-              try {
-                const { data: { session } } = await supa.auth.getSession();
-                const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ horarioFijoId: c.horario_fijo_id }),
-                });
-                const resultado = await resp.json();
-                if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
-                renderAgendaCalendario();
-              } catch (err) {
-                alert('No se pudo quitar: ' + err.message);
-              }
-            });
-          }
-        } else {
-          const btnCancelarPuntual = document.getElementById(`ag-cancelar-puntual-${c.id}`);
-          if (btnCancelarPuntual) {
-            btnCancelarPuntual.addEventListener('click', async () => {
-              if (!confirm(`¿Cancelar la sesión adicional de ${c.nombreAlumna}?`)) return;
-              try {
-                const { data: { session } } = await supa.auth.getSession();
-                const resp = await fetch('/.netlify/functions/admin-cancelar-cita', {
-                  method: 'POST',
-                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
-                  body: JSON.stringify({ citaId: c.id }),
-                });
-                const resultado = await resp.json();
-                if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
-                renderAgendaCalendario();
-              } catch (err) {
-                alert('No se pudo cancelar: ' + err.message);
-              }
-            });
-          }
-        }
-      });
-    }
-
-    render();
-  }
-
-  // Reutiliza el mismo calendario de horarios libres del portal para
-  // reagendar desde el panel de Kathia. A diferencia del portal de la
-  // alumna, aquí no hay límite de anticipación ni aviso de cobro — es
-  // Kathia manejando su propia agenda.
+  // Construye un calendario de mes dentro de "area": los días con
+  // horarios libres se ven resaltados y son clickeables; al elegir un
+  // día se muestran sus horas abajo como chips. onElegir(boton,
+  // isoInicio) se llama al hacer clic en una hora.
   function construirCalendarioHorarios(area, slotsPorDia, onElegir) {
     const dias = Object.keys(slotsPorDia).sort();
     if (!dias.length) {
@@ -673,10 +297,10 @@
         }
         const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
         const tieneSlots = !!(slotsPorDia[fechaStr] && slotsPorDia[fechaStr].length);
-        const sesiones = ['cal-celda', tieneSlots ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
-        if (fechaStr === diaSeleccionado) sesiones.push('cal-celda-activa');
-        if (fechaStr === hoyStr) sesiones.push('cal-celda-hoy');
-        celdas += `<button type="button" class="${sesiones.join(' ')}" data-fecha="${fechaStr}"${tieneSlots ? '' : ' disabled'}>${numDia}${tieneSlots ? '<span class="cal-punto"></span>' : ''}</button>`;
+        const clases = ['cal-celda', tieneSlots ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneSlots ? '' : ' disabled'}>${numDia}${tieneSlots ? '<span class="cal-punto"></span>' : ''}</button>`;
       }
 
       area.innerHTML = `
@@ -732,9 +356,14 @@
     render();
   }
 
+  // Conecta los botones "Reagendar" y "Cancelar" del horario fijo de una
+  // alumna, desde el panel de Kathia. A diferencia del portal de la
+  // alumna, aquí no hay límite de anticipación ni aviso de cobro — es
+  // Kathia manejando su propia agenda. Se llama una vez por cada horario
+  // fijo que tenga la alumna, así que los ids van con sufijo -${horarioFijoId}.
   function wireHorarioFijoBotonesAdmin(cita, alumnaId, horarioFijoId, idSuffix, onSuccess) {
     const suf = idSuffix != null ? idSuffix : horarioFijoId;
-    const alFinalizar = onSuccess || (() => renderAgendaCalendario());
+    const alFinalizar = onSuccess || (() => window.abrirAlumna(alumnaId));
     const btnReagendar = document.getElementById(`hf-admin-reagendar-${suf}`);
     const btnCancelar = document.getElementById(`hf-admin-cancelar-${suf}`);
     const area = document.getElementById(`hf-admin-reagendar-area-${suf}`);
@@ -782,7 +411,7 @@
 
     if (btnCancelar) {
       btnCancelar.addEventListener('click', async () => {
-        if (!confirm('¿Cancelar esta sesión? No se aplican restricciones ni cargos automáticos — es tu decisión.')) return;
+        if (!confirm('¿Cancelar esta clase? No se aplican restricciones ni cargos automáticos — es tu decisión.')) return;
         try {
           const { data: { session } } = await supa.auth.getSession();
           const resp = await fetch('/.netlify/functions/admin-cancelar-cita', {
@@ -800,13 +429,155 @@
     }
   }
 
-  // Vista "Agenda": todas las sesiones de todas las alumnas, en un
-  // calendario de mes — se queda en el panel, sin salir a Google Calendar.
+  // Calendario de mes con TODAS las clases de TODAS las alumnas — la
+  // "Agenda" de Kathia, para que se quede en el portal en vez de salir a
+  // Cal.com. Mismo look que el calendario de "Tus clases este mes" de
+  // cada alumna: días marcados, clic para ver el detalle de ese día. Ahí
+  // aparece cada clase con el nombre de la alumna y las mismas 3
+  // acciones que ya tiene en su ficha: reagendar, cancelar esa clase, o
+  // cancelar el horario fijo completo.
+  function construirCalendarioAgenda(area, citasPorDia) {
+    const dias = Object.keys(citasPorDia).sort();
+    const hoyLima = new Date(Date.now() - 5 * 3600000);
+    const hoyStr = hoyLima.toISOString().slice(0, 10);
+    let mesActual = new Date(hoyLima.getFullYear(), hoyLima.getMonth(), 1);
+    let diaSeleccionado = dias.length ? dias[0] : hoyStr;
+    const pad = (n) => String(n).padStart(2, '0');
+
+    function render() {
+      const primerDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth(), 1);
+      const ultimoDiaMes = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 0);
+      const offset = primerDiaMes.getDay();
+      const filas = Math.ceil((offset + ultimoDiaMes.getDate()) / 7);
+      const nombreMes = mesActual.toLocaleDateString('es-PE', { month: 'long', year: 'numeric' });
+
+      let celdas = '';
+      for (let i = 0; i < filas * 7; i++) {
+        const numDia = i - offset + 1;
+        if (numDia < 1 || numDia > ultimoDiaMes.getDate()) {
+          celdas += `<div class="cal-celda cal-celda-vacia"></div>`;
+          continue;
+        }
+        const fechaStr = `${mesActual.getFullYear()}-${pad(mesActual.getMonth() + 1)}-${pad(numDia)}`;
+        const tieneCitas = !!(citasPorDia[fechaStr] && citasPorDia[fechaStr].length);
+        const clases = ['cal-celda', tieneCitas ? 'cal-celda-libre' : 'cal-celda-sin-cupo'];
+        if (fechaStr === diaSeleccionado) clases.push('cal-celda-activa');
+        if (fechaStr === hoyStr) clases.push('cal-celda-hoy');
+        celdas += `<button type="button" class="${clases.join(' ')}" data-fecha="${fechaStr}"${tieneCitas ? '' : ' disabled'}>${numDia}${tieneCitas ? '<span class="cal-punto"></span>' : ''}</button>`;
+      }
+
+      area.innerHTML = `
+        <div class="cal-widget">
+          <div class="cal-mes-col">
+            <div class="cal-header">
+              <button type="button" class="cal-nav" id="ag-prev" title="Mes anterior">‹</button>
+              <div class="cal-mes-titulo">${nombreMes}</div>
+              <button type="button" class="cal-nav" id="ag-next" title="Mes siguiente">›</button>
+            </div>
+            <div class="cal-dow"><span>D</span><span>L</span><span>M</span><span>M</span><span>J</span><span>V</span><span>S</span></div>
+            <div class="cal-celdas">${celdas}</div>
+          </div>
+          <div class="cal-horas-col" id="ag-detalle-wrap"></div>
+        </div>
+      `;
+
+      area.querySelector('#ag-prev').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() - 1, 1); render(); });
+      area.querySelector('#ag-next').addEventListener('click', () => { mesActual = new Date(mesActual.getFullYear(), mesActual.getMonth() + 1, 1); render(); });
+      area.querySelectorAll('button[data-fecha]:not(:disabled)').forEach(b => {
+        b.addEventListener('click', () => { diaSeleccionado = b.dataset.fecha; render(); });
+      });
+
+      renderDetalle();
+    }
+
+    function renderDetalle() {
+      const wrap = area.querySelector('#ag-detalle-wrap');
+      if (!wrap) return;
+      const citas = citasPorDia[diaSeleccionado] || [];
+      const fechaObj = new Date(diaSeleccionado + 'T00:00:00');
+      const tituloDia = fechaObj.toLocaleDateString('es-PE', { weekday: 'long', day: '2-digit', month: 'short' });
+      if (!citas.length) {
+        wrap.innerHTML = `<div class="cal-horas-titulo">🕐 ${tituloDia}</div><div class="empty-state">No hay clases ese día.</div>`;
+        return;
+      }
+      wrap.innerHTML = `
+        <div class="cal-horas-titulo">🕐 ${tituloDia}</div>
+        <div class="horarios-lista">
+          ${citas.map(c => `
+            <div class="horario-card">
+              <strong style="color:var(--texto);">${c.nombreAlumna}</strong>
+              <div class="card-meta" style="margin-top:2px;">${fmtHora12(c.hora)} · ${c.horario_fijo_id != null ? 'Horario fijo' : 'Clase puntual'}</div>
+              <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:10px;">
+                ${c.horario_fijo_id != null ? `
+                  <button class="btn-sm" type="button" id="hf-admin-reagendar-${c.id}">Reagendar</button>
+                  <button class="btn-sm btn-sm-danger" type="button" id="hf-admin-cancelar-${c.id}">Cancelar esta clase</button>
+                  <span class="back-link back-link-danger" id="ag-cancelar-serie-${c.id}">Cancelar horario fijo</span>
+                ` : `
+                  <button class="btn-sm btn-sm-danger" type="button" id="ag-cancelar-puntual-${c.id}">Cancelar esta clase</button>
+                `}
+              </div>
+              <div id="hf-admin-reagendar-area-${c.id}" style="margin-top:10px;"></div>
+            </div>
+          `).join('')}
+        </div>
+      `;
+
+      citas.forEach(c => {
+        if (c.horario_fijo_id != null) {
+          wireHorarioFijoBotonesAdmin({ id: c.id }, c.alumna_id, c.horario_fijo_id, c.id, () => renderAgendaCalendario());
+          const btnSerie = document.getElementById(`ag-cancelar-serie-${c.id}`);
+          if (btnSerie) {
+            btnSerie.addEventListener('click', async () => {
+              if (!confirm(`¿Cancelar el horario fijo completo de ${c.nombreAlumna}? Se cancelan sus próximas clases automáticas en Cal.com para ese horario.`)) return;
+              try {
+                const { data: { session } } = await supa.auth.getSession();
+                const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ horarioFijoId: c.horario_fijo_id }),
+                });
+                const resultado = await resp.json();
+                if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
+                renderAgendaCalendario();
+              } catch (err) {
+                alert('No se pudo quitar: ' + err.message);
+              }
+            });
+          }
+        } else {
+          const btnCancelarPuntual = document.getElementById(`ag-cancelar-puntual-${c.id}`);
+          if (btnCancelarPuntual) {
+            btnCancelarPuntual.addEventListener('click', async () => {
+              if (!confirm(`¿Cancelar la clase adicional de ${c.nombreAlumna}?`)) return;
+              try {
+                const { data: { session } } = await supa.auth.getSession();
+                const resp = await fetch('/.netlify/functions/admin-cancelar-cita', {
+                  method: 'POST',
+                  headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+                  body: JSON.stringify({ citaId: c.id }),
+                });
+                const resultado = await resp.json();
+                if (!resultado.ok) { alert('No se pudo cancelar: ' + resultado.mensaje); return; }
+                renderAgendaCalendario();
+              } catch (err) {
+                alert('No se pudo cancelar: ' + err.message);
+              }
+            });
+          }
+        }
+      });
+    }
+
+    render();
+  }
+
+  // Vista "Agenda": todas las clases de todas las alumnas, en un
+  // calendario de mes — se queda en el portal, sin salir a Cal.com.
   async function renderAgendaCalendario() {
     vistaActual = 'agenda-calendario';
     contentEl.innerHTML = `
       <h1 class="greeting">Agenda</h1>
-      <p class="greeting-sub">Todas las sesiones programadas de tus alumnas — de un vistazo. Haz clic en un día para ver el detalle y reagendar o cancelar.</p>
+      <p class="greeting-sub">Todas las clases programadas de tus alumnas — de un vistazo, sin salir a Cal.com. Haz clic en un día para ver el detalle y reagendar o cancelar.</p>
       <div id="agenda-cal-area"><div class="loading">Cargando tu agenda...</div></div>
     `;
 
@@ -836,6 +607,700 @@
 
     construirCalendarioAgenda(area, citasPorDia);
   }
+
+  // IMC (índice de masa corporal): peso_kg / estatura_m². Categorías de referencia OMS —
+  // informativo, no reemplaza una evaluación clínica.
+  function imcFor(pesoKg, estaturaCm) {
+    if (pesoKg == null || !estaturaCm) return null;
+    const m = estaturaCm / 100;
+    const imc = pesoKg / (m * m);
+    let categoria;
+    if (imc < 18.5) categoria = 'Bajo peso';
+    else if (imc < 25) categoria = 'Normal';
+    else if (imc < 30) categoria = 'Sobrepeso';
+    else categoria = 'Obesidad';
+    return { valor: imc.toFixed(1), categoria };
+  }
+
+  function renderAgenda() {
+    vistaActual = 'agenda';
+
+    let cuerpoHTML;
+    if (citasCache.loading) {
+      cuerpoHTML = `<div class="empty-state">Cargando agenda...</div>`;
+    } else if (citasCache.configurado === false) {
+      cuerpoHTML = `<div class="empty-state">La agenda de Cal.com todavía no está conectada.</div>`;
+    } else if (citasCache.error) {
+      cuerpoHTML = `<div class="empty-state">No se pudo cargar la agenda: ${citasCache.mensaje || 'error desconocido'}.</div>`;
+    } else if (!citasCache.citas.length) {
+      cuerpoHTML = `<div class="empty-state">No tienes citas agendadas por ahora.</div>`;
+    } else {
+      const limite = new Date();
+      limite.setDate(limite.getDate() + 7);
+      limite.setHours(23, 59, 59, 999);
+      const enSieteDias = citasCache.citas.filter(c => new Date(c.inicio) <= limite);
+      const grupos = agruparCitasPorDia(enSieteDias.length ? enSieteDias : citasCache.citas.slice(0, 5));
+
+      cuerpoHTML = grupos.map(g => `
+        <div class="agenda-dia">
+          <div class="agenda-dia-titulo">${fmtDiaLargo(g.dia)}</div>
+          ${g.items.map(c => {
+            const match = c.email ? alumnasCache.find(a => a.email && a.email.toLowerCase() === c.email.toLowerCase()) : null;
+            const hora = new Date(c.inicio).toLocaleTimeString('es-PE', { hour: 'numeric', minute: '2-digit' });
+            const nombre = c.asistente || c.email || 'Sin nombre';
+            return `
+              <div class="agenda-item">
+                <span class="agenda-hora">${hora}</span>
+                ${match
+                  ? `<span class="agenda-alumna agenda-alumna-link" onclick="abrirAlumna('${match.id}')">${nombre} →</span>`
+                  : `<span class="agenda-alumna">${nombre}</span>`}
+              </div>
+            `;
+          }).join('')}
+        </div>
+      `).join('');
+    }
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Agenda</h1>
+      <p class="greeting-sub">Tus próximas sesiones agendadas en Cal.com. Haz clic en una alumna para revisar su progreso antes de la clase.</p>
+      <div class="agenda-panel">${cuerpoHTML}</div>
+    `;
+  }
+
+  function renderInvitar() {
+    vistaActual = 'invitar';
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Nuevas alumnas</h1>
+      <p class="greeting-sub">Invita a una alumna nueva a crear su cuenta — el mensaje ya viene listo con el link y el código, solo lo revisas y lo envías por WhatsApp.</p>
+      <div class="entry-form">
+        <label>Nombre de la alumna</label>
+        <input type="text" id="inv-nombre" placeholder="Ej. María González">
+
+        <label>Su WhatsApp</label>
+        <input type="text" id="inv-whatsapp" placeholder="Perú: 987654321 · Otro país: código de país + número, ej. 14155552671">
+        <p class="input-hint">Si es de Perú, escribe solo los 9 dígitos (se le agrega el +51 solo). Si es de otro país, escribe el número completo con su código de país, sin el símbolo +.</p>
+
+        <label>Mensaje (puedes editarlo antes de enviar)</label>
+        <textarea id="inv-mensaje" style="min-height:170px;"></textarea>
+
+        <div style="display:flex; gap:14px; align-items:center; margin-top:14px; flex-wrap:wrap;">
+          <a href="#" id="inv-enviar" class="btn-primary" style="text-decoration:none; text-align:center; display:inline-block; margin-top:0;" target="_blank" rel="noopener">Abrir WhatsApp y enviar</a>
+          <span class="back-link" id="inv-restaurar">Restaurar mensaje</span>
+        </div>
+      </div>
+    `;
+
+    function mensajeDefault(nombre) {
+      const n = (nombre || '').trim();
+      return `¡Hola${n ? ' ' + n : ''}! 🎉 Bienvenida a Kathia Coach.\n\nPara crear tu cuenta y ver tu progreso, entra aquí:\nhttps://kathiacoach-alumnas.netlify.app/signup.html\n\nTu código de acceso es: ${ACCESS_CODE}\n\n¡Nos vemos pronto! 💪`;
+    }
+
+    const nombreEl = document.getElementById('inv-nombre');
+    const whatsappEl = document.getElementById('inv-whatsapp');
+    const mensajeEl = document.getElementById('inv-mensaje');
+    const enviarEl = document.getElementById('inv-enviar');
+
+    mensajeEl.value = mensajeDefault('');
+    mensajeEl.dataset.editado = 'false';
+
+    function actualizarLinkEnvio() {
+      let numero = whatsappEl.value.replace(/[^\d]/g, '');
+      // 9 dígitos = número peruano sin código de país (se le agrega el +51 solo).
+      // Cualquier otra cantidad de dígitos se usa tal cual, asumiendo que ya
+      // incluye el código de país (para alumnas fuera de Perú).
+      if (numero.length === 9) numero = '51' + numero;
+      const texto = encodeURIComponent(mensajeEl.value);
+      if (numero) {
+        enviarEl.href = `https://wa.me/${numero}?text=${texto}`;
+        enviarEl.style.opacity = '1';
+        enviarEl.style.pointerEvents = 'auto';
+      } else {
+        enviarEl.href = '#';
+        enviarEl.style.opacity = '.5';
+        enviarEl.style.pointerEvents = 'none';
+      }
+    }
+
+    nombreEl.addEventListener('input', () => {
+      if (mensajeEl.dataset.editado !== 'true') {
+        mensajeEl.value = mensajeDefault(nombreEl.value);
+      }
+      actualizarLinkEnvio();
+    });
+
+    mensajeEl.addEventListener('input', () => {
+      mensajeEl.dataset.editado = 'true';
+      actualizarLinkEnvio();
+    });
+
+    whatsappEl.addEventListener('input', actualizarLinkEnvio);
+
+    document.getElementById('inv-restaurar').addEventListener('click', () => {
+      mensajeEl.value = mensajeDefault(nombreEl.value);
+      mensajeEl.dataset.editado = 'false';
+      actualizarLinkEnvio();
+    });
+
+    actualizarLinkEnvio();
+  }
+
+  function renderGrid() {
+    vistaActual = 'grid';
+    const cards = alumnasCache.map((a, i) => {
+      const b = badgeFor(a);
+      const s = semaforoFor(a);
+
+      const medidas = [];
+      if (a.ultimoPeso != null) medidas.push(`⚖️ ${a.ultimoPeso}kg`);
+
+      const imc = imcFor(a.ultimoPeso, a.estatura_cm);
+      const indices = [];
+      if (imc) indices.push(`IMC ${imc.valor} (${imc.categoria})`);
+
+      let edadHTML = '';
+      if (a.fecha_nacimiento) {
+        const edad = calcularEdad(a.fecha_nacimiento);
+        const dias = diasParaCumple(a.fecha_nacimiento);
+        const aviso = dias === 0 ? ' · 🎂 ¡Hoy!' : dias <= 14 ? ` · 🎂 en ${dias} días` : '';
+        edadHTML = `<div class="card-meta">${edad} años · cumple ${fmtDiaMes(a.fecha_nacimiento)}${aviso}</div>`;
+      }
+
+      const horarioHTML = (a.horariosFijos && a.horariosFijos.length)
+        ? `<div class="card-meta">📅 ${a.horariosFijos.map(h => `${nombreDia(h.dia_semana)} ${fmtHora12(h.hora)}`).join(' · ')}</div>`
+        : `<div class="card-meta">📅 Sin horario fijo aún</div>`;
+
+      return `
+        <div class="alumna-card ${!a.revisada_por_kathia ? 'nueva' : ''}" style="animation-delay:${i * 40}ms" onclick="abrirAlumna('${a.id}')">
+          ${!a.revisada_por_kathia ? `<div class="badge-row"><span class="badge nueva">✨ Recién registrada</span></div>` : ''}
+          <div class="nombre">${a.nombre || a.email}</div>
+          <div class="email">${a.email || ''}</div>
+          <div class="badge-row">
+            <span class="badge ${b.cls}">${b.icon} ${b.texto}</span>
+            <span class="badge ${s.cls}">${s.icon} ${s.texto}</span>
+          </div>
+          ${medidas.length ? `<div class="card-meta card-medidas">${medidas.join(' · ')}</div>` : ''}
+          ${indices.length ? `<div class="card-meta card-medidas">${indices.join(' · ')}</div>` : ''}
+          ${edadHTML}
+          ${horarioHTML}
+          <div class="card-meta">${a.total} registro${a.total === 1 ? '' : 's'} ${a.ultima ? '· último: ' + fmtFecha(a.ultima) : ''}</div>
+        </div>
+      `;
+    }).join('');
+
+    const proximosCumples = alumnasCache
+      .filter(a => a.fecha_nacimiento)
+      .map(a => ({ a, dias: diasParaCumple(a.fecha_nacimiento) }))
+      .filter(x => x.dias <= 30)
+      .sort((x, y) => x.dias - y.dias);
+
+    const cumplePanelHTML = proximosCumples.length ? `
+      <div class="cumple-panel">
+        <div class="cumple-titulo">🎂 Próximos cumpleaños</div>
+        ${proximosCumples.map(({ a, dias }) => `
+          <div class="cumple-item">
+            <span>${a.nombre || a.email}</span>
+            <span>${dias === 0 ? 'Hoy' : dias === 1 ? 'Mañana' : `en ${dias} días`} · ${fmtDiaMes(a.fecha_nacimiento)}</span>
+          </div>
+        `).join('')}
+      </div>
+    ` : '';
+
+    contentEl.innerHTML = `
+      <h1 class="greeting">Alumnas</h1>
+      <p class="greeting-sub">${alumnasCache.length} alumna${alumnasCache.length === 1 ? '' : 's'} registrada${alumnasCache.length === 1 ? '' : 's'}. Haz clic en una para ver o agregar su progreso.</p>
+      ${cumplePanelHTML}
+      <div class="alumnas-grid">${cards || '<div class="empty-state">Todavía no hay alumnas registradas.</div>'}</div>
+    `;
+  }
+
+  window.renderArchivadas = async function() {
+    vistaActual = 'archivadas';
+    contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
+
+    const { data: archivadas } = await supa
+      .from('alumnas')
+      .select('id, nombre, email')
+      .eq('es_admin', false)
+      .eq('activa', false)
+      .order('nombre', { ascending: true });
+
+    const filas = (archivadas || []).map(a => `
+      <div class="agenda-item">
+        <span class="agenda-alumna">${a.nombre || a.email}</span>
+        <span class="back-link" onclick="reactivarAlumna('${a.id}')">Reactivar</span>
+      </div>
+    `).join('');
+
+    contentEl.innerHTML = `
+      <div class="detail-header">
+        <h1 class="greeting">Alumnas archivadas</h1>
+        <span class="back-link" onclick="renderGrid()">← Volver</span>
+      </div>
+      <p class="greeting-sub">Su historial de progreso sigue guardado — reactívalas para que vuelvan a aparecer en Alumnas.</p>
+      <div class="agenda-panel">${filas || '<div class="empty-state">No hay alumnas archivadas.</div>'}</div>
+    `;
+  };
+
+  window.reactivarAlumna = async function(id) {
+    const { error } = await supa.from('alumnas').update({ activa: true }).eq('id', id);
+    if (error) { alert('No se pudo reactivar: ' + error.message); return; }
+    await cargarAlumnas();
+    renderArchivadas();
+  };
+
+  async function fotoUrl(path) {
+    if (!path) return null;
+    const { data, error } = await supa.storage.from('progreso-fotos').createSignedUrl(path, 3600);
+    return (!error && data) ? data.signedUrl : null;
+  }
+
+  function volverDesdeDetalle() {
+    if (vistaAnterior === 'grid') renderGrid(); else renderAgenda();
+  }
+
+  window.abrirAlumna = async function(id) {
+    vistaAnterior = (vistaActual === 'grid') ? 'grid' : 'agenda';
+    vistaActual = 'detalle';
+    const a = alumnasCache.find(x => x.id === id);
+    contentEl.innerHTML = `<div class="loading">Cargando...</div>`;
+
+    // Primera vez que Kathia abre a esta alumna: se marca como revisada,
+    // así deja de aparecer como "recién registrada" en la lista.
+    if (a && !a.revisada_por_kathia) {
+      a.revisada_por_kathia = true;
+      actualizarDotNuevas();
+      supa.from('alumnas').update({ revisada_por_kathia: true }).eq('id', id).then(() => {});
+    }
+
+    const { data: progreso } = await supa
+      .from('progreso')
+      .select('id, fecha, peso_kg, medidas, notas, foto_path, animo')
+      .eq('alumna_id', id)
+      .order('fecha', { ascending: false });
+
+    currentProgreso = progreso || [];
+    editingId = null;
+    animoSeleccionado = null;
+
+    // Horario(s) fijo(s) de esta alumna (puede tener más de uno) y la
+    // próxima clase de cada uno.
+    const { data: horarios } = await supa
+      .from('horario_fijo')
+      .select('id, dia_semana, hora, proxima_confirmacion')
+      .eq('alumna_id', id)
+      .eq('activo', true)
+      .order('dia_semana', { ascending: true })
+      .order('hora', { ascending: true });
+    const horariosFijos = horarios || [];
+    const hoyStr = new Date().toISOString().slice(0, 10);
+    for (const h of horariosFijos) {
+      const { data: citas } = await supa
+        .from('citas_fijas')
+        .select('id, fecha, hora')
+        .eq('horario_fijo_id', h.id)
+        .eq('estado', 'programada')
+        .gte('fecha', hoyStr)
+        .order('fecha', { ascending: true })
+        .limit(1);
+      h.proximaCita = (citas && citas[0]) || null;
+    }
+
+    const filas = (progreso || []).map(p => `
+      <tr>
+        <td>${fmtFecha(p.fecha)}</td>
+        <td>${p.peso_kg != null ? p.peso_kg + ' kg' : '—'}</td>
+        <td>${p.notas || p.medidas || '—'}</td>
+        <td style="font-size:17px;">${p.animo || '—'}</td>
+        <td>${p.foto_path ? `<span class="foto-thumb" data-path="${p.foto_path}">Ver foto</span>` : '—'}</td>
+        <td class="row-actions">
+          <button class="edit-btn" onclick="editarRegistro(${p.id})">Editar</button>
+          <button class="del-btn" onclick="borrarRegistro(${p.id}, '${id}')">Borrar</button>
+        </td>
+      </tr>
+    `).join('');
+
+    contentEl.innerHTML = `
+      <div class="detail-header">
+        <div>
+          <h1 class="greeting">${a.nombre || a.email}</h1>
+          <p class="greeting-sub" style="margin-bottom:0;">${a.email}</p>
+        </div>
+        <div style="display:flex; gap:16px; align-items:center;">
+          <span class="back-link" onclick="archivarAlumna('${id}')">🗂️ Archivar alumna</span>
+          <span class="back-link back-link-danger" onclick="abrirModalEliminar('${id}')">🗑️ Eliminar alumna</span>
+          <span class="back-link" onclick="volverDesdeDetalle()">← Volver</span>
+        </div>
+      </div>
+
+      ${(() => {
+        const ultimoPeso = (progreso || []).find(p => p.peso_kg != null);
+        const metaAlcanzada = a.peso_objetivo != null && ultimoPeso && Math.abs(ultimoPeso.peso_kg - a.peso_objetivo) < 0.5;
+        const tieneDatos = a.peso_objetivo != null || !!a.fecha_nacimiento || a.estatura_cm != null;
+        const resumenPartes = [];
+        if (a.peso_objetivo != null) resumenPartes.push(`Meta: <strong style="color:var(--texto);">${a.peso_objetivo} kg</strong>`);
+        if (a.fecha_nacimiento) resumenPartes.push(`Nació: <strong style="color:var(--texto);">${new Date(a.fecha_nacimiento + 'T00:00:00').toLocaleDateString('es-PE')}</strong>`);
+        if (a.estatura_cm != null) resumenPartes.push(`Estatura: <strong style="color:var(--texto);">${a.estatura_cm} cm</strong>`);
+        return `
+      <div class="entry-form" style="margin-bottom:20px;">
+        <div style="display:flex; justify-content:space-between; align-items:center;">
+          <h3 style="margin-bottom:0;">Datos de la alumna</h3>
+          ${tieneDatos ? `<span class="back-link" id="toggle-meta-form">✏️ Editar</span>` : ''}
+        </div>
+        ${metaAlcanzada ? `<div class="meta-box" style="margin:8px 0 16px;">🎉 Alcanzó su meta de <strong>${a.peso_objetivo} kg</strong>. Fija una nueva meta cuando quieras.</div>` : ''}
+        ${tieneDatos ? `<div id="meta-resumen" style="margin-top:10px; font-size:14px; color:var(--texto-suave);">${resumenPartes.join(' · ')}</div>` : ''}
+        <form id="meta-form" class="grid2" style="align-items:end; ${tieneDatos ? 'display:none; margin-top:16px;' : 'margin-top:8px;'}">
+          <div>
+            <label>Peso objetivo (kg)</label>
+            <input type="number" step="0.1" id="f-meta" placeholder="${metaAlcanzada ? 'Nueva meta' : 'Ej. 65'}" value="${metaAlcanzada ? '' : (a.peso_objetivo != null ? a.peso_objetivo : '')}">
+          </div>
+          <div>
+            <label>Fecha de nacimiento</label>
+            <input type="date" id="f-nacimiento" value="${a.fecha_nacimiento || ''}">
+          </div>
+          <div>
+            <label>Estatura (cm)</label>
+            <input type="number" step="0.1" id="f-estatura" placeholder="Ej. 162" value="${a.estatura_cm != null ? a.estatura_cm : ''}">
+          </div>
+          <button type="submit" class="btn-primary" style="margin-top:12px; grid-column:1/-1;">${tieneDatos ? 'Actualizar datos' : 'Guardar datos'}</button>
+        </form>
+      </div>`;
+      })()}
+
+      <div class="entry-form" style="margin-bottom:20px;">
+        <h3 style="margin-bottom:8px;">${horariosFijos.length > 1 ? 'Horarios fijos de clases' : 'Horario fijo de clases'}</h3>
+        ${horariosFijos.length ? `
+          <div class="horarios-lista">
+            ${horariosFijos.map(h => `
+              <div class="horario-card">
+                <div style="display:flex; justify-content:space-between; align-items:center; flex-wrap:wrap; gap:10px;">
+                  <div>
+                    <strong style="color:var(--texto);">${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}</strong>
+                    <div class="card-meta" style="margin-top:4px;">${h.proximaCita ? `Próxima clase: ${fmtFecha(h.proximaCita.fecha)} · ${fmtHora12(h.proximaCita.hora)}` : 'No hay próximas clases programadas (revisa Cal.com).'}</div>
+                    ${h.proxima_confirmacion ? `<div class="card-meta" style="margin-top:2px;">Próximo recordatorio para ella: ${fmtFecha(h.proxima_confirmacion)}</div>` : ''}
+                  </div>
+                  <span class="back-link back-link-danger" id="quitar-horario-btn-${h.id}">Quitar este horario</span>
+                </div>
+                ${h.proximaCita ? `
+                  <div style="display:flex; gap:10px; flex-wrap:wrap; margin-top:14px;">
+                    <button class="btn-sm" type="button" id="hf-admin-reagendar-${h.id}">Reagendar</button>
+                    <button class="btn-sm btn-sm-danger" type="button" id="hf-admin-cancelar-${h.id}">Cancelar esta clase</button>
+                  </div>
+                  <div id="hf-admin-reagendar-area-${h.id}" style="margin-top:12px;"></div>
+                ` : ''}
+              </div>
+            `).join('')}
+          </div>
+          <p class="input-hint" style="margin-top:12px;">Como administradora, puedes reagendar o cancelar sin restricciones — el aviso de cobro por cancelar el mismo día solo aplica cuando lo hace la alumna.</p>
+        ` : `
+          <p class="greeting-sub" style="margin:0;">Esta alumna todavía no eligió su horario fijo. Ella lo hace desde su propio portal, escogiendo uno de los horarios que tienes libres — en cuanto lo elija, aparecerá aquí.</p>
+        `}
+      </div>
+
+      <div class="entry-form">
+        <h3 id="entry-form-title" style="margin-bottom:4px;">Agregar registro</h3>
+        <form id="entry-form">
+          <div class="grid2">
+            <div>
+              <label>Fecha</label>
+              <input type="date" id="f-fecha" value="${new Date().toISOString().slice(0,10)}" required>
+            </div>
+            <div>
+              <label>Peso (kg)</label>
+              <input type="number" step="0.1" id="f-peso" placeholder="Opcional">
+            </div>
+          </div>
+          <label>Notas</label>
+          <textarea id="f-notas" placeholder="Cómo estuvo la sesión, ajustes, observaciones..."></textarea>
+          <label>Ícono de ánimo (opcional)</label>
+          <div class="animo-picker" id="animo-picker">
+            ${ICONOS_ANIMO.map(icono => `<button type="button" class="animo-btn" data-icono="${icono}">${icono}</button>`).join('')}
+          </div>
+          <label id="f-foto-label">Foto de progreso (opcional)</label>
+          <input type="file" id="f-foto" accept="image/*">
+          <div style="display:flex; gap:10px; align-items:center;">
+            <button type="submit" class="btn-primary" id="entry-submit-btn">Guardar registro</button>
+            <span class="back-link" id="cancel-edit" style="display:none;">Cancelar edición</span>
+          </div>
+        </form>
+      </div>
+
+      <section class="block">
+        <h3>Historial</h3>
+        ${progreso && progreso.length ? `
+          <table class="progreso">
+            <thead><tr><th>Fecha</th><th>Peso</th><th>Notas</th><th>Ánimo</th><th>Foto</th><th></th></tr></thead>
+            <tbody>${filas}</tbody>
+          </table>
+        ` : `<div class="empty-state">Todavía no hay registros para ella.</div>`}
+      </section>
+    `;
+
+    const toggleMetaBtn = document.getElementById('toggle-meta-form');
+    if (toggleMetaBtn) {
+      toggleMetaBtn.addEventListener('click', () => {
+        const formEl = document.getElementById('meta-form');
+        const resumenEl = document.getElementById('meta-resumen');
+        const abierto = formEl.style.display !== 'none';
+        formEl.style.display = abierto ? 'none' : '';
+        if (resumenEl) resumenEl.style.display = abierto ? '' : 'none';
+        toggleMetaBtn.textContent = abierto ? '✏️ Editar' : 'Cancelar';
+      });
+    }
+
+    document.getElementById('meta-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const val = document.getElementById('f-meta').value;
+      const nacimiento = document.getElementById('f-nacimiento').value;
+      const estatura = document.getElementById('f-estatura').value;
+      const { error } = await supa.from('alumnas').update({
+        peso_objetivo: val ? parseFloat(val) : null,
+        fecha_nacimiento: nacimiento || null,
+        estatura_cm: estatura ? parseFloat(estatura) : null,
+      }).eq('id', id);
+      if (error) { alert('No se pudo guardar: ' + error.message); return; }
+      a.peso_objetivo = val ? parseFloat(val) : null;
+      a.fecha_nacimiento = nacimiento || null;
+      a.estatura_cm = estatura ? parseFloat(estatura) : null;
+      window.abrirAlumna(id);
+    });
+
+    horariosFijos.forEach(h => {
+      if (h.proximaCita) wireHorarioFijoBotonesAdmin(h.proximaCita, id, h.id);
+      const quitarHorarioBtn = document.getElementById(`quitar-horario-btn-${h.id}`);
+      if (quitarHorarioBtn) {
+        quitarHorarioBtn.addEventListener('click', async () => {
+          if (!confirm(`¿Quitar el horario de ${nombreDia(h.dia_semana)} a las ${fmtHora12(h.hora)}? Se cancelan sus próximas clases automáticas en Cal.com para ese horario.`)) return;
+          try {
+            const { data: { session } } = await supa.auth.getSession();
+            const resp = await fetch('/.netlify/functions/quitar-horario-fijo', {
+              method: 'POST',
+              headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+              body: JSON.stringify({ horarioFijoId: h.id }),
+            });
+            const resultado = await resp.json();
+            if (!resultado.ok) { alert('No se pudo quitar: ' + resultado.mensaje); return; }
+            window.abrirAlumna(id);
+          } catch (err) {
+            alert('No se pudo quitar: ' + err.message);
+          }
+        });
+      }
+    });
+
+    document.querySelectorAll('.animo-btn').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const yaActivo = btn.classList.contains('active');
+        document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
+        if (yaActivo) {
+          animoSeleccionado = null;
+        } else {
+          btn.classList.add('active');
+          animoSeleccionado = btn.dataset.icono;
+        }
+      });
+    });
+
+    document.querySelectorAll('.foto-thumb').forEach(el => {
+      el.addEventListener('click', async () => {
+        el.textContent = 'Cargando...';
+        const url = await fotoUrl(el.dataset.path);
+        if (url) window.open(url, '_blank');
+        el.textContent = 'Ver foto';
+      });
+    });
+
+    window.editarRegistro = function(regId) {
+      const p = currentProgreso.find(x => x.id === regId);
+      if (!p) return;
+      editingId = regId;
+
+      document.getElementById('f-fecha').value = p.fecha;
+      document.getElementById('f-peso').value = p.peso_kg != null ? p.peso_kg : '';
+      document.getElementById('f-notas').value = p.notas || p.medidas || '';
+      document.getElementById('f-foto').value = '';
+
+      animoSeleccionado = p.animo || null;
+      document.querySelectorAll('.animo-btn').forEach(b => {
+        b.classList.toggle('active', b.dataset.icono === animoSeleccionado);
+      });
+
+      document.getElementById('entry-form-title').textContent = 'Editar registro del ' + fmtFecha(p.fecha);
+      document.getElementById('f-foto-label').textContent = p.foto_path
+        ? 'Reemplazar foto (opcional — deja vacío para conservar la actual)'
+        : 'Foto de progreso (opcional)';
+      document.getElementById('entry-submit-btn').textContent = 'Actualizar registro';
+      document.getElementById('cancel-edit').style.display = 'inline';
+
+      document.getElementById('entry-form').closest('.entry-form').scrollIntoView({ behavior: 'smooth', block: 'start' });
+    };
+
+    function salirModoEdicion() {
+      editingId = null;
+      animoSeleccionado = null;
+      document.querySelectorAll('.animo-btn').forEach(b => b.classList.remove('active'));
+      document.getElementById('entry-form').reset();
+      document.getElementById('f-fecha').value = new Date().toISOString().slice(0,10);
+      document.getElementById('entry-form-title').textContent = 'Agregar registro';
+      document.getElementById('f-foto-label').textContent = 'Foto de progreso (opcional)';
+      document.getElementById('entry-submit-btn').textContent = 'Guardar registro';
+      document.getElementById('cancel-edit').style.display = 'none';
+    }
+
+    document.getElementById('cancel-edit').addEventListener('click', salirModoEdicion);
+
+    document.getElementById('entry-form').addEventListener('submit', async (e) => {
+      e.preventDefault();
+      const submitBtn = document.getElementById('entry-submit-btn');
+      const editando = editingId !== null;
+      submitBtn.disabled = true;
+      submitBtn.textContent = editando ? 'Actualizando...' : 'Guardando...';
+
+      const fecha = document.getElementById('f-fecha').value;
+      const peso = document.getElementById('f-peso').value;
+      const notas = document.getElementById('f-notas').value.trim();
+      const fotoFile = document.getElementById('f-foto').files[0];
+
+      let foto_path = editando ? (currentProgreso.find(x => x.id === editingId) || {}).foto_path || null : null;
+      if (fotoFile) {
+        const ext = fotoFile.name.split('.').pop();
+        const path = `${id}/${fecha}-${Date.now()}.${ext}`;
+        const { error: upErr } = await supa.storage.from('progreso-fotos').upload(path, fotoFile);
+        if (upErr) {
+          alert('No se pudo subir la foto: ' + upErr.message);
+          submitBtn.disabled = false;
+          submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
+          return;
+        }
+        foto_path = path;
+      }
+
+      const payload = {
+        fecha,
+        peso_kg: peso ? parseFloat(peso) : null,
+        notas: notas || null,
+        foto_path,
+        animo: animoSeleccionado,
+      };
+
+      const { error } = editando
+        ? await supa.from('progreso').update(payload).eq('id', editingId)
+        : await supa.from('progreso').insert({ alumna_id: id, ...payload });
+
+      if (error) {
+        alert('No se pudo guardar: ' + error.message);
+        submitBtn.disabled = false;
+        submitBtn.textContent = editando ? 'Actualizar registro' : 'Guardar registro';
+      } else {
+        abrirAlumna(id);
+      }
+    });
+  };
+
+  // Hace el archivado en sí, sin preguntar — se usa tanto desde el enlace directo
+  // "Archivar alumna" (que sí pregunta antes) como desde el modal de eliminar
+  // (donde la pregunta ya se hizo dentro del propio modal).
+  async function archivarAlumnaDirecto(id) {
+    const { error } = await supa.from('alumnas').update({ activa: false }).eq('id', id);
+    if (error) { alert('No se pudo archivar: ' + error.message); return; }
+    await cargarAlumnas();
+    renderGrid();
+  }
+
+  window.archivarAlumna = async function(id) {
+    const a = alumnasCache.find(x => x.id === id);
+    if (!confirm(`¿Archivar a ${a ? (a.nombre || a.email) : 'esta alumna'}? Deja de aparecer en Alumnas, pero todo su historial se conserva — puedes reactivarla cuando quieras desde "Ver alumnas archivadas".`)) return;
+    await archivarAlumnaDirecto(id);
+  };
+
+  // Borra para siempre a una alumna: sus fotos, todo su historial de progreso,
+  // y su ficha. No hay vuelta atrás — por eso solo se llama después de pasar
+  // por el modal de aviso y una última confirmación.
+  async function eliminarAlumnaDefinitivo(id) {
+    try {
+      const { data: archivos } = await supa.storage.from('progreso-fotos').list(id);
+      if (archivos && archivos.length) {
+        const rutas = archivos.map(f => `${id}/${f.name}`);
+        await supa.storage.from('progreso-fotos').remove(rutas);
+      }
+    } catch (e) {
+      // Si no se pudieron borrar las fotos, seguimos igual — no es crítico.
+    }
+
+    const { error: errProgreso } = await supa.from('progreso').delete().eq('alumna_id', id);
+    if (errProgreso) { alert('No se pudo eliminar su historial: ' + errProgreso.message); return; }
+
+    const { error: errAlumna } = await supa.from('alumnas').delete().eq('id', id);
+    if (errAlumna) { alert('No se pudo eliminar a la alumna: ' + errAlumna.message); return; }
+
+    // También borra su acceso de inicio de sesión (esto vive en un sistema
+    // aparte al que solo se puede llegar desde el servidor). Sin este paso,
+    // su correo quedaría "atrapado" y no podría volver a registrarse con él.
+    try {
+      const { data: { session } } = await supa.auth.getSession();
+      if (session) {
+        const resp = await fetch('/.netlify/functions/eliminar-cuenta', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Authorization': `Bearer ${session.access_token}` },
+          body: JSON.stringify({ id }),
+        });
+        const resultado = await resp.json();
+        if (!resultado.ok) {
+          console.warn('No se pudo liberar su correo para volver a registrarse:', resultado.mensaje);
+        }
+      }
+    } catch (e) {
+      // Su ficha y su historial ya se borraron igual — esto no bloquea nada.
+    }
+
+    await cargarAlumnas();
+    renderGrid();
+  }
+
+  // --- Modal de "¿Archivar o eliminar?" ---
+  let alumnaParaEliminar = null;
+
+  window.abrirModalEliminar = function(id) {
+    const a = alumnasCache.find(x => x.id === id);
+    alumnaParaEliminar = id;
+    document.getElementById('modal-eliminar-titulo').textContent =
+      `¿Eliminar a ${a ? (a.nombre || a.email) : 'esta alumna'}?`;
+    document.getElementById('modal-eliminar').classList.add('open');
+  };
+
+  function cerrarModalEliminar() {
+    document.getElementById('modal-eliminar').classList.remove('open');
+    alumnaParaEliminar = null;
+  }
+
+  document.getElementById('modal-btn-cancelar').addEventListener('click', cerrarModalEliminar);
+  document.getElementById('modal-eliminar').addEventListener('click', (e) => {
+    if (e.target.id === 'modal-eliminar') cerrarModalEliminar();
+  });
+
+  document.getElementById('modal-btn-archivar').addEventListener('click', async () => {
+    const id = alumnaParaEliminar;
+    cerrarModalEliminar();
+    if (id) await archivarAlumnaDirecto(id);
+  });
+
+  document.getElementById('modal-btn-eliminar').addEventListener('click', async () => {
+    const id = alumnaParaEliminar;
+    if (!id) return;
+    const a = alumnasCache.find(x => x.id === id);
+    const nombre = a ? (a.nombre || a.email) : 'esta alumna';
+    cerrarModalEliminar();
+    if (!confirm(`Última confirmación: se va a borrar para siempre a ${nombre} y todo su historial. Esto no se puede deshacer. ¿Continuar?`)) return;
+    await eliminarAlumnaDefinitivo(id);
+  });
+
+  window.borrarRegistro = async function(regId, alumnaId) {
+    if (!confirm('¿Borrar este registro?')) return;
+    const { error } = await supa.from('progreso').delete().eq('id', regId);
+    if (error) { alert('No se pudo borrar: ' + error.message); return; }
+    abrirAlumna(alumnaId);
+  };
 
   document.getElementById('logout-btn').addEventListener('click', async () => {
     await supa.auth.signOut();

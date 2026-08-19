@@ -32,7 +32,7 @@ En el menú de la izquierda de Supabase → **Storage** → deberías ver un buc
 ## Subir la nueva versión a Netlify
 
 1. Descarga el zip nuevo que te comparto en el chat.
-2. Proyecto `endearing-mooncake-c4af33` en Netlify → Deploys → arrastra el zip.
+2. Proyecto `kathiacoach-alumnas` en Netlify (conectado a GitHub — ver más abajo, ya no se arrastra zip).
 3. Espera "Published".
 
 ## Qué cambió para Kathia (panel admin)
